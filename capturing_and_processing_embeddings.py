@@ -14,10 +14,7 @@ import warnings
 import sys
 from datetime import datetime, timedelta
 from cryptography.fernet import Fernet
-#from config_key import key 
 import tensorflow as tf
-
-#cipher_suite = Fernet(key)
 
 # Global queue for frames
 frame_queue = queue.Queue()
@@ -53,8 +50,22 @@ def create_tables(conn):
     );
     '''
 
+    landmark_table_sql = '''
+    CREATE TABLE IF NOT EXISTS facial_landmarks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id INTEGER,
+        left_eye TEXT NOT NULL,
+        right_eye TEXT NOT NULL,
+        nose TEXT NOT NULL,
+        mouth_left TEXT NOT NULL,
+        mouth_right TEXT NOT NULL,
+        FOREIGN KEY (session_id) REFERENCES sessions (id)
+    );
+    '''
+
     c = conn.cursor()
     c.execute(session_table_sql)
+    c.execute(landmark_table_sql)
     c.execute(facial_embeddings_table_sql)
 
 def insert_session(conn, timestamp):
@@ -73,16 +84,23 @@ def insert_embedding(conn, session_id, embedding):
     try:
         # Convert the embedding tensor to a NumPy array and then to bytes
         embedding_array = embedding.detach().numpy()
-        embedding_bytes = embedding_array.tobytes()
-
-
-        
+        embedding_bytes = embedding_array.tobytes()  
         sql = "INSERT INTO facial_embeddings (session_id, embedding) VALUES (?, ?)"
         cur = conn.cursor()
         cur.execute(sql, (session_id, embedding_bytes))
         conn.commit()
     except Exception as e:
         print(f"Error inserting embedding: {e}")
+
+def insert_landmarks(conn, session_id, landmarks):
+    """Insert facial landmarks into the database."""
+    try:
+        sql = 'INSERT INTO facial_landmarks (session_id, left_eye, right_eye, nose, mouth_left, mouth_right) VALUES (?, ?, ?, ?, ?, ?)'
+        cur = conn.cursor()
+        cur.execute(sql, (session_id, landmarks[0], landmarks[1], landmarks[2], landmarks[3], landmarks[4]))
+        conn.commit()
+    except Exception as e:
+        print(f"Error inserting landmarks: {e}")
    
 def capture_embeddings(detector, facenet_model, image):
     """Detect faces and capture facial embeddings using MTCNN and FaceNet."""
@@ -111,6 +129,27 @@ def capture_embeddings(detector, facenet_model, image):
     except Exception as e:
         print(f"Error capturing embeddings: {e}")
         return None
+    
+def capture_landmarks(detector, image):
+    """Detect and capture facial landmarks using MTCNN."""
+    try:
+        results = detector.detect_faces(image)
+        if results:
+            keypoints = results[0]['keypoints']
+            landmarks = (
+                str(keypoints['left_eye']),
+                str(keypoints['right_eye']),
+                str(keypoints['nose']),
+                str(keypoints['mouth_left']),
+                str(keypoints['mouth_right'])
+            )
+            return landmarks
+        else:
+            print("No faces detected.")
+            return None
+    except Exception as e:
+        print(f"Error capturing landmarks: {e}")
+        return None
 
 def process_frames(detector, facenet_model, conn):
     """Thread function to process frames and insert session IDs only when embeddings are captured."""
@@ -123,10 +162,13 @@ def process_frames(detector, facenet_model, conn):
                 session_id = insert_session(conn, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
                 for embedding in embeddings:
                     insert_embedding(conn, session_id, embedding)
+            landmarks = capture_landmarks(detector, image)
+            if landmarks:
+                insert_landmarks(conn, session_id, landmarks)
             frame_queue.task_done()
 
 def main():
-    db_file = 'mtcnn3.db'
+    db_file = 'mtcnn.db'
     conn = create_connection(db_file)
     if conn is not None:
         create_tables(conn)
