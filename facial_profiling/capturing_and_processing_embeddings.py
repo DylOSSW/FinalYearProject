@@ -122,7 +122,9 @@ def capture_embeddings(detector, facenet_model, image):
                 # Generate the embedding using FaceNet model
                 embedding = facenet_model(face_tensor)
                 embeddings.append(embedding)
+                print("Embeddings",results)
             return embeddings
+
         else:
             print("No faces detected.")
             return None
@@ -134,6 +136,7 @@ def capture_landmarks(detector, image):
     """Detect and capture facial landmarks using MTCNN."""
     try:
         results = detector.detect_faces(image)
+        print("landmarks",results)
         if results:
             keypoints = results[0]['keypoints']
             landmarks = (
