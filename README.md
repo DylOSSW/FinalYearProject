@@ -44,3 +44,8 @@ Ensure your Raspberry Pi is set up and connected to the internet. Then, follow t
    ```bash
    sudo apt-get update
    sudo apt-get upgrade
+
+
+## Jira Issues
+- Testing Jira Integration [FYP-16].
+
