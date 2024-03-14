@@ -29,7 +29,8 @@ This project aims to develop an AI-integrated face recognition and tracking syst
 
 - Python 3.x
 - OpenCV
-- DLib
+- MTCNN
+- Facenet
 - SQLite (for local data storage)
 - TensorFlow or PyTorch (for deep learning models)
 - SpeechRecognition and pyttsx3 (for speech recognition and synthesis)
@@ -43,3 +44,8 @@ Ensure your Raspberry Pi is set up and connected to the internet. Then, follow t
    ```bash
    sudo apt-get update
    sudo apt-get upgrade
+
+
+## Jira Issues
+- Testing Jira Integration [FYP-16].
+
