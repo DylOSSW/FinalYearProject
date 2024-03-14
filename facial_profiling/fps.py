@@ -13,6 +13,7 @@ import numpy as np
 import warnings
 import sys
 from datetime import datetime, timedelta
+from cryptography.fernet import Fernet
 import tensorflow as tf
 
 # Global queue for frames
@@ -30,69 +31,76 @@ def create_connection(db_file):
         print(e)
     return conn
 
+
 def create_tables(conn):
-    """Create tables as per the new schema."""
-    user_profiles_table_sql = '''
-    CREATE TABLE IF NOT EXISTS user_profiles (
+    """Create database tables."""
+    session_table_sql = '''
+    CREATE TABLE IF NOT EXISTS sessions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
-    );'''
+        timestamp TEXT NOT NULL
+    );
+    '''
 
     facial_embeddings_table_sql = '''
     CREATE TABLE IF NOT EXISTS facial_embeddings (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
+        session_id INTEGER,
         embedding BLOB NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-        FOREIGN KEY (user_id) REFERENCES user_profiles (id)
-    );'''
+        FOREIGN KEY (session_id) REFERENCES sessions (id)
+    );
+    '''
 
-    facial_landmarks_table_sql = '''
+    landmark_table_sql = '''
     CREATE TABLE IF NOT EXISTS facial_landmarks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
+        session_id INTEGER,
         left_eye TEXT NOT NULL,
         right_eye TEXT NOT NULL,
         nose TEXT NOT NULL,
         mouth_left TEXT NOT NULL,
         mouth_right TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-        FOREIGN KEY (user_id) REFERENCES user_profiles (id)
-    );'''
+        FOREIGN KEY (session_id) REFERENCES sessions (id)
+    );
+    '''
 
     c = conn.cursor()
-    c.execute(user_profiles_table_sql)
+    c.execute(session_table_sql)
+    c.execute(landmark_table_sql)
     c.execute(facial_embeddings_table_sql)
-    c.execute(facial_landmarks_table_sql)
-    conn.commit()
 
+def insert_session(conn, timestamp):
+    """Insert a new session into the database."""
+    try:
+        sql = 'INSERT INTO sessions (timestamp) VALUES (?)'
+        cur = conn.cursor()
+        cur.execute(sql, (timestamp,))
+        conn.commit()
+        return cur.lastrowid
+    except Exception as e:
+        print(f"Error inserting session: {e}")
 
-def insert_user_profile(conn, name="Anonymous"):
-    """Insert a dummy/placeholder user profile into the database."""
-    sql = 'INSERT INTO user_profiles (name) VALUES (?)'
-    cur = conn.cursor()
-    cur.execute(sql, (name,))
-    conn.commit()
-    return cur.lastrowid
+def insert_embedding(conn, session_id, embedding):
+    """Insert facial embedding into the database."""
+    try:
+        # Convert the embedding tensor to a NumPy array and then to bytes
+        embedding_array = embedding.detach().numpy()
+        embedding_bytes = embedding_array.tobytes()  
+        sql = "INSERT INTO facial_embeddings (session_id, embedding) VALUES (?, ?)"
+        cur = conn.cursor()
+        cur.execute(sql, (session_id, embedding_bytes))
+        conn.commit()
+    except Exception as e:
+        print(f"Error inserting embedding: {e}")
 
-def insert_embedding(conn, user_id, embedding):
-    """Insert facial embedding into the database, associated with a user."""
-    # Convert the embedding tensor to a NumPy array and then to bytes
-    embedding_array = embedding.detach().numpy()
-    embedding_bytes = embedding_array.tobytes()  
-    sql = "INSERT INTO facial_embeddings (user_id, embedding) VALUES (?, ?)"
-    cur = conn.cursor()
-    cur.execute(sql, (user_id, embedding_bytes))
-    conn.commit()
-
-def insert_landmarks(conn, user_id, landmarks):
-    """Insert facial landmarks into the database, associated with a user."""
-    sql = 'INSERT INTO facial_landmarks (user_id, left_eye, right_eye, nose, mouth_left, mouth_right) VALUES (?, ?, ?, ?, ?, ?)'
-    cur = conn.cursor()
-    cur.execute(sql, (user_id, landmarks[0], landmarks[1], landmarks[2], landmarks[3], landmarks[4]))
-    conn.commit()
-
+def insert_landmarks(conn, session_id, landmarks):
+    """Insert facial landmarks into the database."""
+    try:
+        sql = 'INSERT INTO facial_landmarks (session_id, left_eye, right_eye, nose, mouth_left, mouth_right) VALUES (?, ?, ?, ?, ?, ?)'
+        cur = conn.cursor()
+        cur.execute(sql, (session_id, landmarks[0], landmarks[1], landmarks[2], landmarks[3], landmarks[4]))
+        conn.commit()
+    except Exception as e:
+        print(f"Error inserting landmarks: {e}")
    
 def capture_embeddings(detector, facenet_model, image):
     """Detect faces and capture facial embeddings using MTCNN and FaceNet."""
@@ -147,27 +155,23 @@ def capture_landmarks(detector, image):
         return None
 
 def process_frames(detector, facenet_model, conn):
-    """Thread function to process frames and insert user-related data."""
-    # Example: Insert a dummy user profile and use this user_id for all insertions
-    # Ask for user's name via CLI
-    user_name = input("Please enter the user's name: ")
-    user_id = insert_user_profile(conn, user_name)
-    
+    """Thread function to process frames and insert session IDs only when embeddings are captured."""
     while not stop_event.is_set() or not frame_queue.empty():
         if not frame_queue.empty():
-            image = frame_queue.get()
+            image = frame_queue.get()  # Adjusted to only get the image
             embeddings = capture_embeddings(detector, facenet_model, image)
             if embeddings:
+                # Generate a new session ID only if embeddings are captured
+                session_id = insert_session(conn, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
                 for embedding in embeddings:
-                    insert_embedding(conn, user_id, embedding)
+                    insert_embedding(conn, session_id, embedding)
             landmarks = capture_landmarks(detector, image)
             if landmarks:
-                insert_landmarks(conn, user_id, landmarks)
+                insert_landmarks(conn, session_id, landmarks)
             frame_queue.task_done()
 
-
 def main():
-    db_file = 'Users.db'
+    db_file = 'mtcnn.db'
     conn = create_connection(db_file)
     if conn is not None:
         create_tables(conn)
@@ -175,22 +179,35 @@ def main():
         detector = MTCNN()
         facenet_model = InceptionResnetV1(pretrained='vggface2').eval()
 
-        # Initialize last_snapshot_time here
-        last_snapshot_time = time.time()
-
-        # Start the processing thread
         processing_thread = threading.Thread(target=process_frames, args=(detector, facenet_model, conn))
         processing_thread.start()
+        last_snapshot_time = time.time()
+
+        frame_count = 0
+        fps = 0
+        start_time = time.time()
 
         try:
             while True:
                 ret, frame = cap.read()
                 if ret:
+                    # Calculate FPS
+                    frame_count += 1
+                    if frame_count == 10:  # Update FPS every 10 frames for smoother display
+                        end_time = time.time()
+                        fps = 10 / (end_time - start_time)
+                        start_time = time.time()
+                        frame_count = 0
+
+                    # Display FPS on frame
+                    fps_text = f'FPS: {fps:.2f}'
+                    cv2.putText(frame, fps_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
                     cv2.imshow('Face Detection', frame)
+
                     current_time = time.time()
                     if current_time - last_snapshot_time >= 5:
                         last_snapshot_time = current_time
-                        # Put only the current frame into the queue for processing
                         frame_queue.put(frame)
 
                     if cv2.waitKey(1) & 0xFF == ord('q'):
