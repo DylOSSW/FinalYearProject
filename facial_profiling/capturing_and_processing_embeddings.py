@@ -14,6 +14,7 @@ import warnings
 import sys
 from datetime import datetime, timedelta
 import tensorflow as tf
+import os
 
 # Global queue for frames
 frame_queue = queue.Queue()
@@ -146,13 +147,9 @@ def capture_landmarks(detector, image):
         print(f"Error capturing landmarks: {e}")
         return None
 
-def process_frames(detector, facenet_model, conn):
-    """Thread function to process frames and insert user-related data."""
-    # Example: Insert a dummy user profile and use this user_id for all insertions
-    # Ask for user's name via CLI
+def process_frames(detector, facenet_model, conn):   
     user_name = input("Please enter the user's name: ")
     user_id = insert_user_profile(conn, user_name)
-    
     while not stop_event.is_set() or not frame_queue.empty():
         if not frame_queue.empty():
             image = frame_queue.get()
@@ -167,7 +164,7 @@ def process_frames(detector, facenet_model, conn):
 
 
 def main():
-    db_file = 'Users.db'
+    db_file = 'Us.db'
     conn = create_connection(db_file)
     if conn is not None:
         create_tables(conn)
@@ -187,6 +184,7 @@ def main():
                 ret, frame = cap.read()
                 if ret:
                     cv2.imshow('Face Detection', frame)
+
                     current_time = time.time()
                     if current_time - last_snapshot_time >= 5:
                         last_snapshot_time = current_time
@@ -206,3 +204,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
