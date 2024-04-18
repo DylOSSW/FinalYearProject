@@ -261,22 +261,7 @@ def main():
 
                         cv2.imshow('Face Detection', frame)
 
-                        # current_time = time.time()
-                        # # Check if 5 seconds have passed since the last snapshot
-                        # if current_time - last_snapshot_time >= 3:
-                            # last_snapshot_time = current_time
-                            # # Put only the current frame into the queue for processing
-                            # #frame_queue.put(frame)
-                             # # Capture multiple frames
-                            # captured_frames = []
-                            # for _ in range(MAX_FRAMES_TO_CAPTURE):
-                                # #ret, frame = cap.read()
-                                # #if ret:
-                                # captured_frames.append(frame)
-                            # # Put captured frames into the queue for processing
-                            # for index,frame in enumerate(captured_frames):
-                                # frame_queue.put(frame)
-                                # print(f"---Frame Nr: {index} In Queue---")
+                        
 
                         if cv2.waitKey(1) & 0xFF == ord('q'):
                             break
