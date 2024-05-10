@@ -89,9 +89,13 @@ audio_files = {
     "Now, please slowly turn to your left.": "turn_left.mp3",
     "And now, please slowly turn to your right.": "turn_right.mp3",
     "Have you previously attended this session, provided consent and registered a profile?": "previous_consent.mp3",
-    
+    "Okay, so I will now begin to create a profile for you.": "profile_initiation.mp3",
+    "Oh, you don't have a profile? Let's get one setup for you!": "no_profile.mp3",
+    "During this session, facial features are collected for facial recognition purposes, while demographic data such as name and age are utilized to personalize the experience. All collected data will be encrypted and stored securely. It is important to note that the collected data will only be retained for a maximum of one hour and will be automatically deleted thereafter to ensure privacy and data security. Additionally, it's essential to clarify that ChatGPT is utilized for generating responses, and the user's voice is sent to OpenAI (a third-party provider) for the purpose of speech-to-text (STT) conversion. It's worth mentioning that for both STT and text-to-speech (TTS) functionalities, there is zero data retention. OpenAI's policy states that data sent for STT and TTS purposes is processed only and not retained beyond the duration of the session. This ensures that user privacy is maintained, and no inputs are stored in these processes.":
+    "data_usage_and_privacy_statement.mp3",
+    "During this session, we'll capture and analyze your facial features to personalize your experience. Would you like to know more?":
+    "brief_data_statement.mp3"
 }
-
 conversation_initial_setup = [
     {
         "role": "system", 
@@ -357,6 +361,14 @@ def get_user_input_with_retries(prompt_key, attempt_limit=3):
     return None
 
 def get_user_consent_for_profiling():
+    # Brief explanation of the session's purpose
+    brief_explanation = "During this session, we'll capture and analyze your facial features to personalize your experience. Would you like to know more?"
+    consent_response = get_user_input_with_retries(brief_explanation)
+    
+    # Ask if the user would like more details
+    if "yes" in consent_response.lower():
+        play_audio("During this session, facial features are collected for facial recognition purposes, while demographic data such as name and age are utilized to personalize the experience. All collected data will be encrypted and stored securely. It is important to note that the collected data will only be retained for a maximum of one hour and will be automatically deleted thereafter to ensure privacy and data security. Additionally, it's essential to clarify that ChatGPT is utilized for generating responses, and the user's voice is sent to OpenAI (a third-party provider) for the purpose of speech-to-text (STT) conversion. It's worth mentioning that for both STT and text-to-speech (TTS) functionalities, there is zero data retention. OpenAI's policy states that data sent for STT and TTS purposes is processed only and not retained beyond the duration of the session. This ensures that user privacy is maintained, and no inputs are stored in these processes.")
+    
     consent_response = get_user_input_with_retries("Do you consent to have your facial features captured and analyzed for this session? Please say 'yes' or 'no'.")
     print("Consent response.lower(): ", consent_response.lower())
     if "yes" in consent_response.lower():
@@ -405,16 +417,15 @@ def get_user_age():
         return None
     
 def get_user_consent_for_recognition_attempt():
-    consent_response = get_user_input_with_retries("Thank you for your consent.")
-    #consent_response = get_user_input_with_retries("Have you previously attended this session, provided consent and registered a profile?")
+    consent_response = get_user_input_with_retries("Have you previously attended this session, provided consent and registered a profile?")
     print("Consent response.lower(): ", consent_response.lower())
     if "yes" in consent_response.lower():
         play_audio("Thank you for your consent.")
         logging.info("User consent received.")
         return True
     else:
-        play_audio("You have not given consent to process your facial features. Exiting the application.")
-        logging.info("User consent has not been given.")
+        play_audio("Oh, you don't have a profile? Let's get one setup for you!")
+        logging.info("User does not have a profile.")
         return False
 
 def initialize_components():
@@ -625,18 +636,15 @@ def start_profiling_thread(conn, cap, face_detection, frame_queue):
     stop_event.clear()
 
     try:
-        '''if not get_user_consent_for_profiling():
+        if not get_user_consent_for_profiling():
             print("Exiting due to lack of consent.")
-            return'''
+            profile_completed_event.set()
+            return  # Skip profiling if consent is not obtained
+        
+        play_audio("Okay, so I will now begin to create a profile for you.")
         
         user_name = get_user_name()
         user_age = get_user_age()
-        conversation.append(
-            {
-                "role": "user", 
-                "content": f"Hi, my name is, {user_name}, I am {user_age} years old."
-            }
-        )
         #user_name = "Dylan"
         #user_age = 26
         facenet_model = InceptionResnetV1(pretrained='vggface2').eval()
