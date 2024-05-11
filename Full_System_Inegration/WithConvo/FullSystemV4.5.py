@@ -1,3 +1,12 @@
+# Student Names:   Dylan Holmwood and Kristers Martukans
+# Student Numbers: D21124331 and D21124318
+# Date:            21st May 2024
+# Module Title:    Final Year Project
+# Module Code:     PROJ4004
+# Supervisors:     Paula Kelly and Damon Berry 
+# Script Name:     MainSystem.py
+# Description:     This file serves as the.....
+
 import cv2
 import time
 import threading
@@ -9,7 +18,7 @@ from PIL import Image
 import mediapipe as mp
 import torch
 import pygame
-from database_operations_no_encryption import create_connection, create_tables, insert_user_profile, insert_embedding, delete_old_records, delete_database_on_exit
+from database_operations_no_encryption import create_connection, create_tables, insert_user_profile, insert_embeddings_batch, insert_embedding, delete_old_records, delete_database_on_exit
 #from FullSystemV3_imports import live_speech_to_text, get_user_consent_for_recognition_attempt, play_audio, get_user_age, get_user_name, process_audio_data
 import pygame
 import tempfile
@@ -29,6 +38,8 @@ from playsound import playsound
 import psutil
 import GPUtil
 import re
+from scipy.signal import butter, lfilter
+
 
 # Setup logging configuration
 logging.basicConfig(filename='application_audit.log', level=logging.INFO, filemode='w', format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -94,6 +105,10 @@ audio_files = {
     "During this session, we'll capture and analyze your facial features to personalize your experience. Would you like to know more?":
     "brief_data_statement.mp3",
     "I couldn't understand the name, please try again.":"unclear_name_error.mp3",
+    "Sorry I couldn't make out your age, could you please say it again?.": "unclear_age_error.mp3",
+    "Please listen to the following instructions.": "instruction_intro.mp3",
+    "Thank you, for providing your information, your profile is now complete!": "profiling_completed_message.mp3",
+    "I will now peform some calibration to capture your facial features from a few angles for better accuracy.": "calibration_message.mp3"
 }
 conversation_initial_setup = [
     {
@@ -211,8 +226,6 @@ def play_audio(message_key, name=None, retries = 3, delay = 2):
         print(f"Error playing audio file {audio_file_path}: {e}")
     finally:
         listening_enabled = True
-
-from scipy.signal import butter, lfilter
 
 def bandpass_filter(data, lowcut, highcut, fs, order=5):
     nyq = 0.5 * fs
@@ -348,7 +361,8 @@ def get_user_name(prompt_key="Please say your name.", attempt_limit=3, timeout=1
                     print("Received:", response)
 
                     # Analyze the response to determine if it's clear
-                    prompt_analysis = f"Please analyze the response: '{response}'. I want you to only return the name as a single word or the word 'unclear'. If there is a reasonable name, just return that; if there is an unclear sentence where you can't make out the name, just return 'unclear'."
+                    prompt_analysis = f"Please analyze the response: '{response}'. I want you to only return the name as a single word or the word 'unclear'. If there is a reasonable name, just return that; if there is an unclear sentence where you can't make out the name, just return 'unclear'. Only return the name or the word unclear. A one word single response nothing else."
+                    
                     name = chat_with_gpt(prompt_analysis).strip().lower()
                     print("for debuggin", name)
                     if "unclear" in name:
@@ -395,12 +409,12 @@ def get_user_age(prompt_key="Please tell me your age.", attempt_limit=3, timeout
                     print("Received:", response)
 
                     # Analyze the response to determine if it's clear and valid
-                    prompt_analysis = f"Please analyze the response: '{response}'. I want you to only return the age or the word 'unclear'. If there is a reasonable age, just return that; if there is an unclear sentence where you can't make out the age, just return 'unclear'. If you return the age do not return it with a full stop."
+                    prompt_analysis = f"Please analyze the response: '{response}'. I want you to only return the age or the word 'unclear'. If there is a reasonable age, just return that; if there is an unclear sentence where you can't make out the age, just return 'unclear'. If you return the age do not return it with a full stop or any other words just the age. Whether it be age or unclear you should only return a one word response."
                     age_text = chat_with_gpt(prompt_analysis).strip().lower()
                     print("Debugging:", age_text)
                     if "unclear" in age_text:
                         print("The response was unclear or invalid.")
-                        play_audio("I couldn't understand the age, please try again.")
+                        play_audio("Sorry I couldn't make out your age, could you please say it again?.")
                         attempts += 1  # Ensure the next attempt increments if the response is unclear
                         break  # Exit this attempt and try again
                     else:
@@ -505,9 +519,7 @@ def initialize_components():
     speech_processing_queue = queue.Queue()
     return  mp_face_detection,  stop_event, face_detected_event, profile_mode_event, speech_processing_queue
 
-def process_frames(face_detection, facenet_model, conn, user_name, user_age, stop_event, frame_queue):
-
-    user_id = insert_user_profile(conn, user_name, user_age)
+'''def process_frames(face_detection, facenet_model, conn, user_id, stop_event, frame_queue):
     
     while not stop_event.is_set():
 
@@ -523,7 +535,35 @@ def process_frames(face_detection, facenet_model, conn, user_name, user_age, sto
                         numpy_embedding = embedding.cpu().numpy() if isinstance(embedding, torch.Tensor) else embedding
                     print("Calling insert")
                     insert_embedding(conn, user_id, numpy_embedding.flatten())
+            frame_queue.task_done()'''
+
+def process_frames(face_detection, facenet_model, conn, user_id, stop_event, frame_queue, batch_size=10):
+    embeddings_batch = []
+
+    while not stop_event.is_set():
+        if not frame_queue.empty():
+            image = frame_queue.get()
+            embeddings = capture_embeddings_with_mediapipe(face_detection, facenet_model, image)
+            if embeddings:
+                for embedding in embeddings:
+                    if isinstance(embedding, torch.Tensor) and embedding.requires_grad:
+                        numpy_embedding = embedding.detach().cpu().numpy()
+                    else:
+                        numpy_embedding = embedding.cpu().numpy() if isinstance(embedding, torch.Tensor) else embedding
+
+                    embeddings_batch.append(numpy_embedding.flatten())
+                    if len(embeddings_batch) >= batch_size:
+                        print("Batch insert")
+                        insert_embeddings_batch(conn, user_id, embeddings_batch)
+                        embeddings_batch = []
+
             frame_queue.task_done()
+
+    # Handle the remaining embeddings in the batch after the loop finishes
+    if embeddings_batch:
+        print("Final batch insert")
+        insert_embeddings_batch(conn, user_id, embeddings_batch)
+
 
 def capture_embeddings_with_mediapipe(face_detection, facenet_model, image):
     """
@@ -559,8 +599,7 @@ def capture_for_duration(cap, frame_queue, duration):
         if ret:
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             frame_queue.put(frame_rgb)  # Correct use of queue instance
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+
 
 def get_all_embeddings(conn):
 
@@ -712,14 +751,19 @@ def start_profiling_thread(conn, cap, face_detection, frame_queue):
         
         user_name = get_user_name()
         user_age = get_user_age()
+        # Insert user profile and get user ID
+        user_id = insert_user_profile(conn, user_name, user_age)
+        
         facenet_model = InceptionResnetV1(pretrained='vggface2').eval()
-        processing_thread = threading.Thread(target=process_frames, args=(face_detection, facenet_model, conn, user_name, user_age, stop_event, frame_queue))
+        processing_thread = threading.Thread(target=process_frames, args=(face_detection, facenet_model, conn, user_id, stop_event, frame_queue))
         processing_thread.start()
 
-        instructions = ["Please face forward for a few seconds.", "Now, please slowly turn to your left.", "And now, please slowly turn to your right."]
+        instructions = ["I will now peform some calibration to capture your facial features from a few angles for better accuracy.","Please listen to the following instructions.","Please face forward for a few seconds.", "Now, please slowly turn to your left.", "And now, please slowly turn to your right."]
         for instruction in instructions:
             play_audio(instruction)
             capture_for_duration(cap, frame_queue, duration=6)
+
+        play_audio("Thank you, for providing your information, your profile is now complete!")
         
         stop_event.set()
         processing_thread.join()
@@ -786,7 +830,8 @@ def main():
                                 if not face_detected_event.is_set():  # Check this only once
                                     face_detected_event.set()
                                     print("Face detected for 3 seconds, initiating check profile state")
-                                    threading.Thread(target=check_profile_state).start()
+                                    check_profile_thread = threading.Thread(target=check_profile_state)
+                                    check_profile_thread.start()
                                     face_detected_time = None  # Reset timer after action
                                 
                             
@@ -798,6 +843,7 @@ def main():
                                 print("Starting profiling mode.")
                                 profile_thread = threading.Thread(target=start_profiling_thread, args=(conn, cap, face_detection, frame_queue))
                                 profile_thread.start()
+                                check_profile_thread.join()
                                 does_not_have_profile_event.clear()  # Reset after starting profiling
 
                             if has_profile_event.is_set():
@@ -805,6 +851,7 @@ def main():
                                 print("Attempting Recognition.")
                                 recognition_thread = threading.Thread(target=attempt_recognition, args=(cap, face_detection, frame_rgb, face_detected_event, conn, profile_mode_event))
                                 recognition_thread.start()
+                                check_profile_thread.join()
                                 has_profile_event.clear()  # Reset after starting profiling
 
                             if recognition_failure_event.is_set():
