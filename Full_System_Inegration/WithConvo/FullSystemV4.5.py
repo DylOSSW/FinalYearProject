@@ -60,8 +60,6 @@ farewell = ["bye","goodbye","see you later"]
 # Create a regex pattern that matches any of the farewell phrases, ignoring case and handling punctuation
 farewell_pattern = re.compile(r'\b(?:' + '|'.join(re.escape(word) for word in farewell) + r')\b', re.IGNORECASE)
 
-
-
 audio_files = {
     "Hello there my name is Onyx.": "greeting_text.mp3",
     "I didn't catch that. Let's try again.": "didnt_catch_that.mp3",
@@ -94,7 +92,8 @@ audio_files = {
     "During this session, facial features are collected for facial recognition purposes, while demographic data such as name and age are utilized to personalize the experience. All collected data will be encrypted and stored securely. It is important to note that the collected data will only be retained for a maximum of one hour and will be automatically deleted thereafter to ensure privacy and data security. Additionally, it's essential to clarify that ChatGPT is utilized for generating responses, and the user's voice is sent to OpenAI (a third-party provider) for the purpose of speech-to-text (STT) conversion. It's worth mentioning that for both STT and text-to-speech (TTS) functionalities, there is zero data retention. OpenAI's policy states that data sent for STT and TTS purposes is processed only and not retained beyond the duration of the session. This ensures that user privacy is maintained, and no inputs are stored in these processes.":
     "data_usage_and_privacy_statement.mp3",
     "During this session, we'll capture and analyze your facial features to personalize your experience. Would you like to know more?":
-    "brief_data_statement.mp3"
+    "brief_data_statement.mp3",
+    "I couldn't understand the name, please try again.":"unclear_name_error.mp3",
 }
 conversation_initial_setup = [
     {
@@ -212,59 +211,67 @@ def play_audio(message_key, name=None, retries = 3, delay = 2):
         print(f"Error playing audio file {audio_file_path}: {e}")
     finally:
         listening_enabled = True
-      
-# Function to perform live speech-to-text
-def live_speech_to_text(audio_input_queue,wait_time=70):
+
+from scipy.signal import butter, lfilter
+
+def bandpass_filter(data, lowcut, highcut, fs, order=5):
+    nyq = 0.5 * fs
+    low = lowcut / nyq
+    high = highcut / nyq
+    b, a = butter(order, [low, high], btype='band')
+    y = lfilter(b, a, data)
+    return y
+   
+def live_speech_to_text(audio_input_queue, wait_time=70):
     global ambient_detected
     global speech_volume
     global listening_enabled
-    
+
     FORMAT = pyaudio.paInt16
     CHANNELS = 1
     RATE = 44100
     CHUNK = 1024
 
     audio = pyaudio.PyAudio()
-
-    stream = audio.open(
-        format=FORMAT,
-        channels=CHANNELS,
-        rate=RATE,
-        input=True,
-        frames_per_buffer=CHUNK
-    )
+    stream = audio.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
 
     frames = []
     recording = False
     frames_recorded = 0
 
     while True:
-        #print(listening_enabled)
         frames_recorded += 1
-        data = stream.read(CHUNK)
+        data = stream.read(CHUNK, exception_on_overflow=False)  # Read data from the stream
+
+        # Convert byte data to numpy array
+        audio_data = np.frombuffer(data, dtype=np.int16)
+        # Filter the data
+        filtered_data = bandpass_filter(audio_data, 300, 3400, RATE)
+
+        # Convert back to bytes
+        data = filtered_data.astype(np.int16).tobytes()
+
+        # Calculate RMS of the filtered data
         rms = audioop.rms(data, 2)
 
         if not ambient_detected:
             if frames_recorded < 40:
                 if frames_recorded == 1:
                     print("Detecting ambient noise...")
-                if frames_recorded > 5:
-                    if speech_volume < rms:
-                        speech_volume = rms
+                if speech_volume < rms:
+                    speech_volume = rms
                 continue
             elif frames_recorded == 40:
                 print("Listening...")
-                speech_volume = speech_volume * 3
+                speech_volume = speech_volume * 3  # Consider adjusting this based on testing
                 ambient_detected = True
 
         if rms > speech_volume and listening_enabled:
             recording = True
-            #print("Recording ENABLED")
             frames_recorded = 0
         elif recording and frames_recorded > wait_time:
             recording = False
             
-
             wf = wave.open("audio.wav", 'wb')
             wf.setnchannels(CHANNELS)
             wf.setsampwidth(audio.get_sample_size(FORMAT))
@@ -277,13 +284,11 @@ def live_speech_to_text(audio_input_queue,wait_time=70):
                 model="whisper-1",
                 file=audio_file
             )
-            
             audio_file.close()  # Close the file after usage
+            os.remove("audio.wav")  # Remove the audio file
 
-            os.remove("audio.wav")
-
-            print("Result org: ",result)
-            print("Result text: ",result.text)
+            print("Result org: ", result)
+            print("Result text: ", result.text)
             audio_input_queue.put(result.text)
                 
             if farewell_pattern.search(result.text):
@@ -326,32 +331,128 @@ def process_audio_data(audio_input_queue):
         except Exception as e:
             print(f"Error in audio processing: {e}")
 
+def get_user_name(prompt_key="Please say your name.", attempt_limit=3, timeout=10):
+    global listening_enabled
+    attempts = 0
+    while attempts < attempt_limit:
+        if not listening_enabled:
+            listening_enabled = True
+
+        start_time = time.time()  # Record the start time for each attempt
+        try:
+            # Play the prompt from a pre-recorded file
+            play_audio(prompt_key)
+            while time.time() - start_time < timeout:  # Check elapsed time
+                try:
+                    response = audio_input_queue.get(timeout=timeout)
+                    print("Received:", response)
+
+                    # Analyze the response to determine if it's clear
+                    prompt_analysis = f"Please analyze the response: '{response}'. I want you to only return the name as a single word or the word 'unclear'. If there is a reasonable name, just return that; if there is an unclear sentence where you can't make out the name, just return 'unclear'."
+                    name = chat_with_gpt(prompt_analysis).strip().lower()
+                    print("for debuggin", name)
+                    if "unclear" in name:
+                        print("The response was unclear or invalid.")
+                        play_audio("I couldn't understand the name, please try again.")
+                        attempts += 1  # Ensure the next attempt increments if the response is unclear
+                        break  # Exit this attempt and try again
+                    else:
+                        print("Chat Answer: ", name)
+                        logging.info("User name has been received: %s", name)
+                        play_audio("Thank you for providing your name")
+                        listening_enabled = False
+                        return name  # Return the clear name
+
+                except queue.Empty:
+                    play_audio("I didn't catch that. Let's try again.")
+
+        except Exception as e:
+            print("Error while processing input:", str(e))
+            play_audio("An error occurred. Let's try again.")
+
+        # If timeout is reached without a valid response
+        if time.time() - start_time >= timeout:
+            play_audio("Sorry, I couldn't hear anything.")
+            attempts += 1
+
+    listening_enabled = False
+    return None  # Return None if all attempts fail
+
+def get_user_age(prompt_key="Please tell me your age.", attempt_limit=3, timeout=10):
+    global listening_enabled
+    attempts = 0
+    while attempts < attempt_limit:
+        if not listening_enabled:
+            listening_enabled = True
+
+        start_time = time.time()  # Record the start time for each attempt
+        try:
+            # Play the prompt from a pre-recorded file
+            play_audio(prompt_key)
+            while time.time() - start_time < timeout:  # Check elapsed time
+                try:
+                    response = audio_input_queue.get(timeout=timeout)
+                    print("Received:", response)
+
+                    # Analyze the response to determine if it's clear and valid
+                    prompt_analysis = f"Please analyze the response: '{response}'. I want you to only return the age or the word 'unclear'. If there is a reasonable age, just return that; if there is an unclear sentence where you can't make out the age, just return 'unclear'. If you return the age do not return it with a full stop."
+                    age_text = chat_with_gpt(prompt_analysis).strip().lower()
+                    print("Debugging:", age_text)
+                    if "unclear" in age_text:
+                        print("The response was unclear or invalid.")
+                        play_audio("I couldn't understand the age, please try again.")
+                        attempts += 1  # Ensure the next attempt increments if the response is unclear
+                        break  # Exit this attempt and try again
+                    else:
+                        try:
+                            age = int(age_text)
+                            print("Extracted Age:", age)
+                            logging.info("User age has been received: %d", age)
+                            play_audio("Thank you. I have recorded your age.")
+                            listening_enabled = False
+                            return age  # Return the age if it's clear and valid
+                        except ValueError:
+                            print("Failed to extract a valid age.")
+                            play_audio("Your response didn't seem to include an age. Let's try again.")
+                            attempts += 1
+                            break
+
+                except queue.Empty:
+                    play_audio("I didn't catch that. Let's try again.")
+
+        except Exception as e:
+            print("Error while processing input:", str(e))
+            play_audio("An error occurred. Let's try again.")
+
+        # If timeout is reached without a valid response
+        if time.time() - start_time >= timeout:
+            play_audio("Sorry, I couldn't hear anything.")
+            attempts += 1
+
+    listening_enabled = False
+    return None  # Return None if all attempts fail
 
 
-
-def get_user_input_with_retries(prompt_key, attempt_limit=3):
+def get_user_input_with_retries(prompt_key, attempt_limit=3, timeout=10):
     print("Getting input with retries")
     global listening_enabled
     attempts = 0
     while attempts < attempt_limit:
         if not listening_enabled:
             listening_enabled = True
+        start_time = time.time()  # Record the start time for each attempt
         try:
             # Play the prompt from a pre-recorded file
             play_audio(prompt_key)
-            try:
-                response = audio_input_queue.get()
-                print(response)
-                
-                return response
-            except queue.Empty:
-                attempts += 1
-                play_audio("I didn't catch that. Let's try again.")
-                if attempts == 2:
-                    attempts += 1
-                    play_audio("I couldn't understand that. Let's try again.")
-                elif attempts >= attempt_limit:
-                    play_audio("Sorry, I couldn't hear anything.")
+            while time.time() - start_time < timeout:  # Check elapsed time
+                try:
+                    response = audio_input_queue.get(timeout=timeout)
+                    print(response)
+                    return response
+                except queue.Empty:
+                    play_audio("I didn't catch that. Let's try again.")
+            # If timeout is reached without a response
+            play_audio("Sorry, I couldn't hear anything.")
         except Exception as e:
             attempts += 1
             play_audio("An error occurred. Let's try again.")
@@ -359,6 +460,7 @@ def get_user_input_with_retries(prompt_key, attempt_limit=3):
                 play_audio("Sorry, I couldn't process your input after several attempts.")
     listening_enabled = False
     return None
+
 
 def get_user_consent_for_profiling():
     # Brief explanation of the session's purpose
@@ -380,41 +482,6 @@ def get_user_consent_for_profiling():
         logging.info("User consent has not been given.")
         return False
     
-    
-def get_user_name():
-    name_response = get_user_input_with_retries("Please say your name.")
-    print("name_response",name_response)
-    if name_response:
-        print("inside name response if")
-        chat = f"What is the name in the phrase '{name_response}'? Return just the name in your answer, nothing else."
-        name = chat_with_gpt(chat)
-        print("Chat Answer: ", name)
-        logging.info("User name has been received.")
-        play_audio("Thank you for providing your name")  # Handling dynamic insertion
-        return name
-    else:
-        print("Failed to capture the user's name.")
-        return None
-
-def get_user_age():
-    age_response = get_user_input_with_retries("Please tell me your age.")
-    if age_response:
-        chat = f"How old is someone who says, '{age_response}'? Return just the age in your answer."
-        age_text = chat_with_gpt(chat)
-        try:
-            age = int(age_text)
-            print("Extracted Age: ", age)
-            logging.info("User age has been received.")
-            play_audio("Thank you. I have recorded your age.")
-            return age
-        except ValueError:
-            print("Failed to extract a valid age.")
-            play_audio("I couldn't understand your age. Let's try again.")
-            return None
-    else:
-        print("Failed to capture the user's age.")
-        play_audio("I'm sorry, I couldn't hear you clearly.")
-        return None
     
 def get_user_consent_for_recognition_attempt():
     consent_response = get_user_input_with_retries("Have you previously attended this session, provided consent and registered a profile?")
@@ -645,8 +712,6 @@ def start_profiling_thread(conn, cap, face_detection, frame_queue):
         
         user_name = get_user_name()
         user_age = get_user_age()
-        #user_name = "Dylan"
-        #user_age = 26
         facenet_model = InceptionResnetV1(pretrained='vggface2').eval()
         processing_thread = threading.Thread(target=process_frames, args=(face_detection, facenet_model, conn, user_name, user_age, stop_event, frame_queue))
         processing_thread.start()
@@ -870,10 +935,6 @@ def main():
                         cv2.imshow('User View', display_frame)
                         cv2.imshow('Developer View', developer_frame)
 
-
-
-        
-        
                         if cv2.waitKey(1) & 0xFF == ord('q'):
                             break
  
