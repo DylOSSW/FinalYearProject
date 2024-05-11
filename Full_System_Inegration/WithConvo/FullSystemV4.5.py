@@ -51,6 +51,9 @@ recognition_failure_event = threading.Event()       # Recognition Failure Event:
 conversation_ended_event = threading.Event()        # Conversation Ended Event: Conversation has ended.
 recognition_running_event = threading.Event()
 returning_user_event = threading.Event()
+conversation_running = False
+profiling_running = False
+recognition_running = False
 
 audio_input_queue = queue.Queue()
 ambient_detected = False
@@ -290,11 +293,13 @@ def live_speech_to_text(audio_input_queue, wait_time=70):
             print("Result org: ", result)
             print("Result text: ", result.text)
             audio_input_queue.put(result.text)
+            
                 
             if farewell_pattern.search(result.text):
                 if conversation_thread and conversation_thread.is_alive():
                     print("Farewell phrase registered - Setting conversation ended event")
                     conversation_ended_event.set()
+                
             frames = []
 
         if recording:
@@ -308,7 +313,7 @@ def process_audio_data(audio_input_queue):
     if not listening_enabled:
         listening_enabled = True
         print("Listening enabled mode change: ", listening_enabled)
-    while not conversation_ended_event.is_set():
+    while not conversation_ended_event.is_set() and not recognition_failure_event.is_set():
         #listening_enabled = True
         try:
             text = audio_input_queue.get()
@@ -325,11 +330,16 @@ def process_audio_data(audio_input_queue):
                 print("Error: Audio file path is None")
             listening_enabled = True
 
+        except queue.Empty:
+            continue
         except PermissionError as pe:
             print(f"Permission denied error: {pe}")
 
         except Exception as e:
             print(f"Error in audio processing: {e}")
+        finally:
+            clear_queue(audio_input_queue)
+            conversation_running = False
 
 def get_user_name(prompt_key="Please say your name.", attempt_limit=3, timeout=10):
     global listening_enabled
@@ -619,14 +629,17 @@ def attempt_recognition(cap, face_detection, frame_rgb, face_detected_event, con
     retry_counter = 0
     #Count positive matches
     num_matches = 0
-    
+    print("Matches: ",num_matches)
+    print(recognition_count, retry_max, match_threshold, retry_counter)
     global modeText
     user_ids, embeddings = get_all_embeddings(conn)
     facenet_model = InceptionResnetV1(pretrained='vggface2').eval()
     modeText = "State: Recognition"
     recognition_running_event.set()
     
-    while not conversation_ended_event.is_set() or recognition_failure_event.is_set():
+    while not recognition_failure_event.is_set():
+        if conversation_ended_event.is_set():
+            break
         if not recognition_frame_queue.empty():
             captured_frames = []
             matched_frame_indexes = []  # Store indexes of frames with matches
@@ -646,20 +659,24 @@ def attempt_recognition(cap, face_detection, frame_rgb, face_detected_event, con
                     closest_index = find_closest_embedding(captured_embedding_np, embeddings)
                     if closest_index != -1:
                         user_id = user_ids[closest_index]
-                        print(f"Hello there, Recognized User ID {user_id}!")
+                        #print(f"Hello there, Recognized User ID {user_id}!")
                         if returning_user_event.is_set():
-                            returning_user_event.clear()
+                            
                             existing_user_name = get_returning_user_name(conn, user_id)
                             returning_user_remark = f"It's me, {existing_user_name}."
+                            print(returning_user_remark)
                             returning_user_greeting = chat_with_gpt(returning_user_remark)
                             audio_file_path = "temp_audio.mp3"  # Temporary file path for the audio
                             generate_audio(returning_user_greeting, audio_file_path)
+                            
                             if audio_file_path is not None:
                                 play_response(audio_file_path)
                                 #playsound(None)  # Close the audio player
                                 os.remove(audio_file_path)  # Remove the temporary audio file
                             else:
                                 print("Error: Audio file path is None")
+                            
+                            returning_user_event.clear()
                         retry_counter = 0
                         num_matches += 1
                         matched_frame_indexes.append(index)  # Store index of matching frame
@@ -692,6 +709,7 @@ def attempt_recognition(cap, face_detection, frame_rgb, face_detected_event, con
                             
                             break  # Exit the loop after failed recognition
             recognition_frame_queue.task_done()
+        
 
 
 # Rest of the code remains the same
@@ -727,6 +745,7 @@ def start_profiling_thread(conn, cap, face_detection, frame_queue):
 
     finally:
         # Notify the main thread that profiling is done
+        clear_queue(frame_queue)
         profile_completed_event.set()
 
 def check_profile_state():
@@ -744,13 +763,18 @@ def check_profile_state():
          print("User confirmed not having a profile.")
 
 
+def clear_queue(queue):
+    with queue.mutex:
+        queue.queue.clear()
+
+
 def main():
     mp_face_detection, stop_event, face_detected_event, profile_mode_event, speech_processing_queue = initialize_components()
     db_file = 'MYDB2.db'
     conn = create_connection(db_file)
     speech_thread = threading.Thread(target=live_speech_to_text, args=(audio_input_queue,))
     speech_thread.start()
-    global modeText, listening_enabled, conversation_thread, conversation, conversation_initial_setup
+    global modeText, listening_enabled, conversation_thread, conversation, conversation_initial_setup, conversation_running
     if conn:
         create_tables(conn)
         cap = cv2.VideoCapture(0)
@@ -796,28 +820,41 @@ def main():
 
                             if does_not_have_profile_event.is_set():
                                 print("Starting profiling mode.")
+                                clear_queue(frame_queue)
                                 profile_thread = threading.Thread(target=start_profiling_thread, args=(conn, cap, face_detection, frame_queue))
                                 profile_thread.start()
                                 does_not_have_profile_event.clear()  # Reset after starting profiling
 
                             if has_profile_event.is_set():
                                 returning_user_event.set()
+                                clear_queue(recognition_frame_queue)
+
                                 print("Attempting Recognition.")
                                 recognition_thread = threading.Thread(target=attempt_recognition, args=(cap, face_detection, frame_rgb, face_detected_event, conn, profile_mode_event))
                                 recognition_thread.start()
                                 has_profile_event.clear()  # Reset after starting profiling
 
                             if recognition_failure_event.is_set():
-                                print("Attempting Recognition.")
+                                listening_enabled = False
+                                print("---RECOGNITION FAILURE EVENT IS SET---")
                                 recognition_thread.join()
+                                print("---RECOG THREAD JOINED---")
                                 if conversation_thread and conversation_thread.is_alive():
+                                    print("---CONVO ALSO ON : ENDING---")
                                     conversation_thread.join()
-                                profile_from_recognition_thread = threading.Thread(target=start_profiling_thread, args=(conn, cap, face_detection, frame_queue))
-                                profile_from_recognition_thread.start()
+                                    conversation_thread = None
+                                    #conversation_ended_event.set()
+                                
+                                clear_queue(frame_queue)
+                                profile_thread = threading.Thread(target=start_profiling_thread, args=(conn, cap, face_detection, frame_queue))
+                                profile_thread.start()
                                 recognition_failure_event.clear()  # Reset after starting profiling
 
                             if recognition_success_event.is_set():
-                                print("Attempting Recognition.")
+                                if not conversation_running:
+                                    conversation_running = True
+                                print("Recognition Successful.")
+                                clear_queue(audio_input_queue)
                                 #recognition_thread.join()
                                 modeText = "State: Conversation"
                                 conversation_thread = threading.Thread(target=process_audio_data, args=(audio_input_queue,))
@@ -834,10 +871,14 @@ def main():
 
                             
                             if conversation_ended_event.is_set():
+                                print("---CONVO ENDED EVENT SET---")
+                                clear_queue(audio_input_queue)
                                 listening_enabled = False
                                 modeText = "State: Idle"
                                 conversation_thread.join()
+                                conversation_thread = None
                                 if recognition_thread and recognition_thread.is_alive():
+                                    #recognition_failure_event.set()
                                     recognition_thread.join() # Stop recognition - Assuming user leaves after exiting conversation
                                 conversation = conversation_initial_setup.copy()
                                 print("Conversation completed and cleared. Ready for new face detection. \
