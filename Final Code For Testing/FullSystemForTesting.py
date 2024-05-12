@@ -331,6 +331,9 @@ def process_audio_data(audio_input_queue):
         #listening_enabled = True
         try:
             text = audio_input_queue.get()
+            if text == None:
+                print("Exiting Conversation Loop")
+                break
             print("Text from audio queue: ", text)
             response_from_gpt = chat_with_gpt(text)
             print("Response from chat: ", response_from_gpt)
@@ -856,6 +859,7 @@ def main():
 
                             if recognition_failure_event.is_set():
                                 listening_enabled = False
+                                audio_input_queue.put(None)
                                 print("---RECOGNITION FAILURE EVENT IS SET---")
                                 recognition_thread.join()
                                 print("---RECOG THREAD JOINED---")
@@ -865,9 +869,11 @@ def main():
                                     conversation_thread = None
                                     #conversation_ended_event.set()
                                 
-                                clear_queue(frame_queue)
-                                profile_thread = threading.Thread(target=start_profiling_thread, args=(conn, cap, face_detection, frame_queue))
-                                profile_thread.start()
+                                #clear_queue(frame_queue)
+                                #profile_thread = threading.Thread(target=start_profiling_thread, args=(conn, cap, face_detection, frame_queue))
+                                #profile_thread.start()
+                                face_detected_time = None  # Reset to detect new face
+                                face_detected_event.clear()  # Allow new face detection
                                 recognition_failure_event.clear()  # Reset after starting profiling
 
                             if recognition_success_event.is_set():
