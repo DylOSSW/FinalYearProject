@@ -94,36 +94,7 @@ def insert_embeddings(conn, user_id, embedding):
     except Exception as e:
         print(f"Error inserting embedding: {e}")  # Print any errors (for debugging)
 
-def insert_embeddings_batch(conn, user_id, embeddings_batch):
-    """Insert multiple facial embeddings into the database in a single transaction."""
-    try:
-        # Prepare SQL statement for batch insertion
-        sql = "INSERT INTO facial_embeddings (user_id, embedding) VALUES (?, ?)"
-        cur = conn.cursor()  # Get cursor for executing SQL statements
-        
-        # Prepare the list of tuples for batch insertion
-        embeddings_data = [(user_id, embedding.tobytes()) for embedding in embeddings_batch]
-        
-        # Execute SQL statement to insert all embeddings in the batch
-        cur.executemany(sql, embeddings_data)
-        conn.commit()  # Commit the transaction
-    except Exception as e:
-        print(f"Error inserting embeddings batch: {e}")  # Print any errors (for debugging)
 
-def insert_embeddings_batch(conn, user_id, embeddings_batch):
-    """Insert a batch of facial embeddings into the database."""
-    try:
-        sql = "INSERT INTO facial_embeddings (user_id, embedding) VALUES (?, ?)"  # SQL statement
-        cur = conn.cursor()  # Get cursor for executing SQL statements
-        
-        # Prepare a list of tuples (user_id, embedding_bytes) for batch insertion
-        batch_data = [(user_id, embedding.tobytes()) for embedding in embeddings_batch]
-        
-        # Execute the batch insert
-        cur.executemany(sql, batch_data)
-        conn.commit()  # Commit the transaction
-    except Exception as e:
-        print(f"Error batch inserting embeddings: {e}")  # Print any errors (for debugging)
 
 def delete_old_records(conn):
     """Delete user profiles and their associated facial embeddings older than a certain date."""

@@ -28,6 +28,7 @@ import numpy as np
 from playsound import playsound
 import psutil
 import GPUtil
+import re
 
 # Setup logging configuration
 logging.basicConfig(filename='application_audit.log', level=logging.INFO, filemode='w', format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -51,6 +52,8 @@ ambient_detected = False
 speech_volume = 100
 listening_enabled = False  # Flag to control the listening process
 farewell = ["bye","goodbye","see you later"]
+# Create a regex pattern that matches any of the farewell phrases, ignoring case and handling punctuation
+farewell_pattern = re.compile(r'\b(?:' + '|'.join(re.escape(word) for word in farewell) + r')\b', re.IGNORECASE)
 
 
 
@@ -113,13 +116,21 @@ def chat_with_gpt(question):
 
 # Function to generate audio using OpenAI's TTS
 def generate_audio(response_from_gpt,audio_file_path):
+    print("Generating audio from chat's response")
     audio_response = client.audio.speech.create(input=response_from_gpt, voice="onyx",model='tts-1')
+    print("Audio generated")
     audio_response.stream_to_file(audio_file_path)
+    print("Audio streamed?")
     
 
 # Function to play the audio file using playsound
 def play_response(audio_file_path):
+    global listening_enabled
+    if listening_enabled:
+        listening_enabled = False
     playsound(audio_file_path)
+    time.sleep(1)
+    listening_enabled = True
 
 def play_audio(message_key, name=None):
     global listening_enabled
@@ -138,7 +149,8 @@ def play_audio(message_key, name=None):
         
     except Exception as e:
         print(f"Error playing audio file {audio_file_path}: {e}")
-    listening_enabled = True
+    finally:
+        listening_enabled = True
       
 # Function to perform live speech-to-text
 def live_speech_to_text(audio_input_queue,wait_time=70):
@@ -212,7 +224,8 @@ def live_speech_to_text(audio_input_queue,wait_time=70):
             print("Result org: ",result)
             print("Result text: ",result.text)
             audio_input_queue.put(result.text)
-            if any(word in result.text.lower() for word in farewell):
+            if farewell_pattern.search(result.text):
+                print("Farewell phrase registered - Setting conversation ended event")
                 conversation_ended_event.set()
             frames = []
 
@@ -222,12 +235,18 @@ def live_speech_to_text(audio_input_queue,wait_time=70):
 
 def process_audio_data(audio_input_queue):
     global listening_enabled
-    while True:
+    print("INSIDE CONVERSATION MODE")
+    print("Listening enabled: ", listening_enabled)
+    if not listening_enabled:
+        listening_enabled = True
+        print("Listening enabled mode change: ", listening_enabled)
+    while not conversation_ended_event.is_set():
         #listening_enabled = True
         try:
             text = audio_input_queue.get()
             print("Text from audio queue: ", text)
             response_from_gpt = chat_with_gpt(text)
+            print("Response from chat: ", response_from_gpt)
             audio_file_path = "temp_audio.mp3"  # Temporary file path for the audio
             generate_audio(response_from_gpt, audio_file_path)
             if audio_file_path is not None:
@@ -337,14 +356,6 @@ def get_user_age():
         play_audio("I'm sorry, I couldn't hear you clearly.")
         return None
     
-
-
-
-
-
-
-
-
 def initialize_components():
     global frame_queue
     mp_face_detection = mp.solutions.face_detection
@@ -485,9 +496,9 @@ def start_profiling_thread(conn, cap, face_detection, frame_queue):
     stop_event.clear()
 
     try:
-        '''if not get_user_consent_for_profiling():
+        if not get_user_consent_for_profiling():
             print("Exiting due to lack of consent.")
-            return'''
+            return
         
         user_name = get_user_name()
         user_age = get_user_age()
@@ -511,16 +522,16 @@ def start_profiling_thread(conn, cap, face_detection, frame_queue):
         profile_completed_event.set()
 
 def check_profile_state():
-    
+
     global modeText
     modeText = "State: Check Profile"
-    #response = get_user_input_with_retries(recognizer, microphone, "Do you have a profile? Say 'yes' or 'no'.")
-    response  = input("Do you have a profile?: ")
-        
-    if response.lower() == 'yes':
+
+    check_profile = get_user_consent_for_recognition_attempt()
+
+    if check_profile == True:
          has_profile_event.set()
          print("User confirmed having a profile.")
-    elif response.lower() == 'no':
+    else:
          does_not_have_profile_event.set()
          print("User confirmed not having a profile.")
 
@@ -531,7 +542,7 @@ def main():
     conn = create_connection(db_file)
     speech_thread = threading.Thread(target=live_speech_to_text, args=(audio_input_queue,))
     speech_thread.start()
-    global modeText
+    global modeText, listening_enabled
     if conn:
         create_tables(conn)
         cap = cv2.VideoCapture(0)
@@ -607,6 +618,7 @@ def main():
 
                             
                             if conversation_ended_event.is_set():
+                                listening_enabled = False
                                 modeText = "State: Idle"
                                 conversation_thread.join()
                                 print("Conversation completed. Ready for new face detection.")
@@ -701,7 +713,7 @@ def main():
 
                         cv2.imshow('User View', display_frame)
                         cv2.imshow('Developer View', developer_frame)
-        
+    
                         if cv2.waitKey(1) & 0xFF == ord('q'):
                             break
  

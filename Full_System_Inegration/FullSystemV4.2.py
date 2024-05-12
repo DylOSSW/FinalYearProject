@@ -36,10 +36,6 @@ logging.basicConfig(filename='application_audit.log', level=logging.INFO, filemo
 modeText = "State: Idle"
 # Initialize the queue once, globally.
 frame_queue = queue.Queue()
-recognition_frame_queue = queue.Queue()
-
-conversation_thread = None
-recognition_thread = None
 
 stop_event = threading.Event()
 face_detected_event = threading.Event()             # Face Detected Event: Triggers when the system detects a face.
@@ -49,8 +45,8 @@ profile_completed_event = threading.Event()         # Profile Completed Event: P
 recognition_success_event = threading.Event()       # Recognition Success Event: User is successfully recognized.
 recognition_failure_event = threading.Event()       # Recognition Failure Event: User is not recognized.
 conversation_ended_event = threading.Event()        # Conversation Ended Event: Conversation has ended.
-recognition_running_event = threading.Event()
-returning_user_event = threading.Event()
+profile_created = threading.Event()        # Conversation Ended Event: Conversation has ended.
+
 
 audio_input_queue = queue.Queue()
 ambient_detected = False
@@ -59,6 +55,7 @@ listening_enabled = False  # Flag to control the listening process
 farewell = ["bye","goodbye","see you later"]
 # Create a regex pattern that matches any of the farewell phrases, ignoring case and handling punctuation
 farewell_pattern = re.compile(r'\b(?:' + '|'.join(re.escape(word) for word in farewell) + r')\b', re.IGNORECASE)
+
 
 
 
@@ -89,33 +86,8 @@ audio_files = {
     "Now, please slowly turn to your left.": "turn_left.mp3",
     "And now, please slowly turn to your right.": "turn_right.mp3",
     "Have you previously attended this session, provided consent and registered a profile?": "previous_consent.mp3",
-    "Okay, so I will now begin to create a profile for you.": "profile_initiation.mp3",
-    "Oh, you don't have a profile? Let's get one setup for you!": "no_profile.mp3",
-    "During this session, facial features are collected for facial recognition purposes, while demographic data such as name and age are utilized to personalize the experience. All collected data will be encrypted and stored securely. It is important to note that the collected data will only be retained for a maximum of one hour and will be automatically deleted thereafter to ensure privacy and data security. Additionally, it's essential to clarify that ChatGPT is utilized for generating responses, and the user's voice is sent to OpenAI (a third-party provider) for the purpose of speech-to-text (STT) conversion. It's worth mentioning that for both STT and text-to-speech (TTS) functionalities, there is zero data retention. OpenAI's policy states that data sent for STT and TTS purposes is processed only and not retained beyond the duration of the session. This ensures that user privacy is maintained, and no inputs are stored in these processes.":
-    "data_usage_and_privacy_statement.mp3",
-    "During this session, we'll capture and analyze your facial features to personalize your experience. Would you like to know more?":
-    "brief_data_statement.mp3"
+    
 }
-conversation_initial_setup = [
-    {
-        "role": "system", 
-        "content": "You should respond as humanly as possible. You should have a fluid \
-         and natural-feeling conversation with the user as would be expected if they spoke to an actual \
-         human being. Keep your answers short enough to feel like a normal conversation, don't go off on \
-         a tangent when the user says something short and simple. Don't respond too short either, act interested \
-         in the user, if you respond too vaguely, the conversation will seem boring. Have your own opinions,\
-         if a user says something, imagine you are another human being with your own interests, respond \
-         accordingly. Keep the conversation going and keep it simple yet engaging. Keep the user engaged, \
-         answer any questions as needed but don't make the answers too long, unless the user specifically \
-         asks for a long story. Act like you are having a conversation with someone you just met. Your answers\
-         should be a maximum of 2 sentences unless specified otherwise. If a response requires more than two\
-         sentences you can ask the user if they would like to hear more about the topic or not."
-    }
-]
-
-conversation = conversation_initial_setup.copy()
-
-
 
 def load_openai_key():
     with open('openai_api.key', 'rb') as key_file:
@@ -129,13 +101,11 @@ client = OpenAI(api_key=api_key)
 
 def chat_with_gpt(question):
     global listening_enabled
-    
-    conversation.append(
-        {
-            "role": "user", 
-            "content": f"{question}"
-        }
-    )
+    # Creating a conversation with the system message and user question
+    conversation = [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": question},
+    ]
 
     listening_enabled = False
 
@@ -144,31 +114,12 @@ def chat_with_gpt(question):
 
     # Extract the generated response
     answer = response.choices[0].message.content.strip()
-
-    conversation.append(
-        {
-            "role": "assistant", 
-            "content": answer
-        }
-    )
     return answer
-
-
-# Function to print conversation
-def print_conversation(conversation):
-    for message in conversation:
-        role = message["role"]
-        content = message["content"]
-        print(f"{role.capitalize()}: {content}")
-
 
 # Function to generate audio using OpenAI's TTS
 def generate_audio(response_from_gpt,audio_file_path):
-    print("Generating audio from chat's response")
     audio_response = client.audio.speech.create(input=response_from_gpt, voice="onyx",model='tts-1')
-    print("Audio generated")
     audio_response.stream_to_file(audio_file_path)
-    print("Audio streamed?")
     
 
 # Function to play the audio file using playsound
@@ -278,11 +229,9 @@ def live_speech_to_text(audio_input_queue,wait_time=70):
             print("Result org: ",result)
             print("Result text: ",result.text)
             audio_input_queue.put(result.text)
-                
             if farewell_pattern.search(result.text):
-                if conversation_thread and conversation_thread.is_alive():
-                    print("Farewell phrase registered - Setting conversation ended event")
-                    conversation_ended_event.set()
+                print("Farewell phrase registered - Setting conversation ended event")
+                conversation_ended_event.set()
             frames = []
 
         if recording:
@@ -291,11 +240,10 @@ def live_speech_to_text(audio_input_queue,wait_time=70):
 
 def process_audio_data(audio_input_queue):
     global listening_enabled
-    print("INSIDE CONVERSATION MODE")
-    print("Listening enabled: ", listening_enabled)
+    print("INSIDE PROCESS AUDIO THREAD - CONVERSATION MODE")
+    print("Listening enabled state: ", listening_enabled)
     if not listening_enabled:
         listening_enabled = True
-        print("Listening enabled mode change: ", listening_enabled)
     while not conversation_ended_event.is_set():
         #listening_enabled = True
         try:
@@ -312,12 +260,15 @@ def process_audio_data(audio_input_queue):
             else:
                 print("Error: Audio file path is None")
             listening_enabled = True
+        #except queue.Empty:
+        #    continue
 
         except PermissionError as pe:
             print(f"Permission denied error: {pe}")
 
         except Exception as e:
             print(f"Error in audio processing: {e}")
+        
 
 
 
@@ -354,14 +305,6 @@ def get_user_input_with_retries(prompt_key, attempt_limit=3):
     return None
 
 def get_user_consent_for_profiling():
-    # Brief explanation of the session's purpose
-    brief_explanation = "During this session, we'll capture and analyze your facial features to personalize your experience. Would you like to know more?"
-    consent_response = get_user_input_with_retries(brief_explanation)
-    
-    # Ask if the user would like more details
-    if "yes" in consent_response.lower():
-        play_audio("During this session, facial features are collected for facial recognition purposes, while demographic data such as name and age are utilized to personalize the experience. All collected data will be encrypted and stored securely. It is important to note that the collected data will only be retained for a maximum of one hour and will be automatically deleted thereafter to ensure privacy and data security. Additionally, it's essential to clarify that ChatGPT is utilized for generating responses, and the user's voice is sent to OpenAI (a third-party provider) for the purpose of speech-to-text (STT) conversion. It's worth mentioning that for both STT and text-to-speech (TTS) functionalities, there is zero data retention. OpenAI's policy states that data sent for STT and TTS purposes is processed only and not retained beyond the duration of the session. This ensures that user privacy is maintained, and no inputs are stored in these processes.")
-    
     consent_response = get_user_input_with_retries("Do you consent to have your facial features captured and analyzed for this session? Please say 'yes' or 'no'.")
     print("Consent response.lower(): ", consent_response.lower())
     if "yes" in consent_response.lower():
@@ -373,6 +316,17 @@ def get_user_consent_for_profiling():
         logging.info("User consent has not been given.")
         return False
     
+def get_user_consent_for_recognition_attempt():
+    consent_response = get_user_input_with_retries("Have you previously attended this session, provided consent and registered a profile?")
+    print("Consent response.lower(): ", consent_response.lower())
+    if "yes" in consent_response.lower():
+        play_audio("Thank you for your consent.")
+        logging.info("User consent received.")
+        return True
+    else:
+        play_audio("You have not given consent to process your facial features. Exiting the application.")
+        logging.info("User consent has not been given.")
+        return False
     
 def get_user_name():
     name_response = get_user_input_with_retries("Please say your name.")
@@ -409,17 +363,13 @@ def get_user_age():
         play_audio("I'm sorry, I couldn't hear you clearly.")
         return None
     
-def get_user_consent_for_recognition_attempt():
-    consent_response = get_user_input_with_retries("Have you previously attended this session, provided consent and registered a profile?")
-    print("Consent response.lower(): ", consent_response.lower())
-    if "yes" in consent_response.lower():
-        play_audio("Thank you for your consent.")
-        logging.info("User consent received.")
-        return True
-    else:
-        play_audio("Oh, you don't have a profile? Let's get one setup for you!")
-        logging.info("User does not have a profile.")
-        return False
+
+
+
+
+
+
+
 
 def initialize_components():
     global frame_queue
@@ -478,16 +428,6 @@ def capture_embeddings_with_mediapipe(face_detection, facenet_model, image):
 
     return embeddings
 
-def capture_for_duration(cap, frame_queue, duration):
-    start_time = time.time()
-    while time.time() - start_time < duration:
-        ret, frame = cap.read()
-        if ret:
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            frame_queue.put(frame_rgb)  # Correct use of queue instance
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
-
 def get_all_embeddings(conn):
 
     """Retrieve all user embeddings from the database."""
@@ -502,19 +442,6 @@ def get_all_embeddings(conn):
         embedding = np.frombuffer(row[1], dtype=np.float32)
         embeddings.append(embedding)
     return user_ids, embeddings
-
-def get_returning_user_name(conn, user_id):
-
-    sql = "SELECT name FROM user_profiles WHERE id = ?"
-    cur = conn.cursor()
-    cur.execute(sql, (user_id,))
-    result = cur.fetchone()
-
-    if result:
-        return result[0]
-    else:
-        return None
-
 
 def find_closest_embedding(captured_embedding, embeddings, threshold=0.9):
     """
@@ -538,89 +465,40 @@ def find_closest_embedding(captured_embedding, embeddings, threshold=0.9):
     return closest_embedding_index
 
 
-def attempt_recognition(cap, face_detection, frame_rgb, face_detected_event, conn, profile_mode_event):
+def attempt_recognition(cap, face_detection, frame_rgb, embeddings, face_detected_event, user_ids, conn, profile_mode_event):
     recognition_count = 0  # Variable to count successful recognitions
-    retry_max = 3
-    match_threshold = 3
-    retry_counter = 0
-    #Count positive matches
-    num_matches = 0
-    
     global modeText
-    user_ids, embeddings = get_all_embeddings(conn)
-    facenet_model = InceptionResnetV1(pretrained='vggface2').eval()
     modeText = "State: Recognition"
-    recognition_running_event.set()
     
-    while not conversation_ended_event.is_set() or recognition_failure_event.is_set():
-        if not recognition_frame_queue.empty():
-            captured_frames = []
-            matched_frame_indexes = []  # Store indexes of frames with matches
-            matched_user_index = []
-
-            captured_frames.append(recognition_frame_queue.get())
-
-            # Capture embeddings for each frame
-            captured_embeddings = []
-
-            for frame in captured_frames:
-                captured_embeddings.extend(capture_embeddings_with_mediapipe(face_detection, facenet_model, frame))
-            
-            if captured_embeddings:
-                for index, captured_embedding in enumerate(captured_embeddings):
-                    captured_embedding_np = np.array(captured_embedding).flatten()
-                    closest_index = find_closest_embedding(captured_embedding_np, embeddings)
-                    if closest_index != -1:
-                        user_id = user_ids[closest_index]
-                        print(f"Hello there, Recognized User ID {user_id}!")
-                        if returning_user_event.is_set():
-                            returning_user_event.clear()
-                            existing_user_name = get_returning_user_name(conn, user_id)
-                            returning_user_remark = f"It's me, {existing_user_name}."
-                            returning_user_greeting = chat_with_gpt(returning_user_remark)
-                            audio_file_path = "temp_audio.mp3"  # Temporary file path for the audio
-                            generate_audio(returning_user_greeting, audio_file_path)
-                            if audio_file_path is not None:
-                                play_response(audio_file_path)
-                                #playsound(None)  # Close the audio player
-                                os.remove(audio_file_path)  # Remove the temporary audio file
-                            else:
-                                print("Error: Audio file path is None")
-                        retry_counter = 0
-                        num_matches += 1
-                        matched_frame_indexes.append(index)  # Store index of matching frame
-                        matched_user_index.append(closest_index)
-                        if num_matches >= match_threshold:
-                            if conversation_thread == None:
-                                print("+++Match found+++")
-                                print("Matched Frame Indexes: ",matched_frame_indexes)
-                                print("Matched closest user indexes: ", matched_user_index)
-                                print("\n\nThree successful recognitions. Starting Conversation.")
-                                #face_detected_event.set()  # Set face detected event
-                                recognition_success_event.set()
-                                break  # Exit the loop after successful recognition
-                            else:
-                                continue
-                        else:
-                            print(f"{3 - recognition_count} more recognitions needed for event.")
-
-                    else:
-                        retry_counter+=1
-                        print(f"---Match NOT found---\nRetries left: {retry_max - retry_counter}")
-                        
-                        if retry_counter == retry_max:
-                            retry_counter = 0
-                            retry_max = 3                        
-
-                            print("User not recognized. Switching to profiling mode.")
-                            recognition_running_event.clear()
-                            recognition_failure_event.set()      # Recognition Failure Event: User is not recognized.
-                            
-                            break  # Exit the loop after failed recognition
-            recognition_frame_queue.task_done()
-
+    while True:
+        facenet_model = InceptionResnetV1(pretrained='vggface2').eval()
+        embeddings_captured = capture_embeddings_with_mediapipe(face_detection, facenet_model, frame_rgb)
+        if embeddings_captured:
+            captured_embedding = embeddings_captured[0]
+            index = find_closest_embedding(captured_embedding, embeddings)
+            if index != -1:
+                user_id = user_ids[index]
+                print(f"Hello there, Recognized User ID {user_id}!")
+                recognition_count += 1  # Increment recognition count
+                if recognition_count >= 3:
+                    print("Three successful recognitions. Starting Conversation.")
+                    #face_detected_event.set()  # Set face detected event
+                    recognition_success_event.set()
+                    break  # Exit the loop after successful recognition
+                else:
+                    print(f"{3 - recognition_count} more recognitions needed for event.")
+            else:
+                print("User not recognized. Switching to profiling mode.")
+                recognition_failure_event.set()      # Recognition Failure Event: User is not recognized.
+                break  # Exit the loop after failed recognition
 
 # Rest of the code remains the same
+
+
+def capture_for_duration(cap, frame_queue, duration):
+    start_time = time.time()
+    while time.time() - start_time < duration:
+        print("")
 
 def start_profiling_thread(conn, cap, face_detection, frame_queue):
     global modeText
@@ -629,25 +507,24 @@ def start_profiling_thread(conn, cap, face_detection, frame_queue):
     stop_event.clear()
 
     try:
-        if not get_user_consent_for_profiling():
+        '''if not get_user_consent_for_profiling():
             print("Exiting due to lack of consent.")
-            profile_completed_event.set()
-            return  # Skip profiling if consent is not obtained
+            profile_completed_event.set()'''
         
-        play_audio("Okay, so I will no begin to create a profile for you.")
-        
-        user_name = get_user_name()
-        user_age = get_user_age()
-        #user_name = "Dylan"
-        #user_age = 26
+        #user_name = get_user_name()
+        #user_age = get_user_age()
+        user_name = "Dylan"
+        user_age = 26
         facenet_model = InceptionResnetV1(pretrained='vggface2').eval()
         processing_thread = threading.Thread(target=process_frames, args=(face_detection, facenet_model, conn, user_name, user_age, stop_event, frame_queue))
         processing_thread.start()
 
+        profile_created.set()
+
         instructions = ["Please face forward for a few seconds.", "Now, please slowly turn to your left.", "And now, please slowly turn to your right."]
         for instruction in instructions:
             play_audio(instruction)
-            capture_for_duration(cap, frame_queue, duration=6)
+        profile_created.clear()
         
         stop_event.set()
         processing_thread.join()
@@ -678,13 +555,13 @@ def main():
     conn = create_connection(db_file)
     speech_thread = threading.Thread(target=live_speech_to_text, args=(audio_input_queue,))
     speech_thread.start()
-    global modeText, listening_enabled, conversation_thread, conversation, conversation_initial_setup
+    global modeText
     if conn:
         create_tables(conn)
         cap = cv2.VideoCapture(0)
         try:
             with mp_face_detection.FaceDetection(min_detection_confidence=0.5) as face_detection:
-                #user_ids, embeddings = get_all_embeddings(conn)
+                user_ids, embeddings = get_all_embeddings(conn)
                 face_detected_time = None
 
                 while not stop_event.is_set():
@@ -716,11 +593,6 @@ def main():
                                     print("Face detected for 3 seconds, initiating check profile state")
                                     threading.Thread(target=check_profile_state).start()
                                     face_detected_time = None  # Reset timer after action
-                                
-                            
-                            if recognition_running_event.is_set():
-                                if recognition_frame_queue.empty():
-                                    recognition_frame_queue.put(frame_rgb)
 
                             if does_not_have_profile_event.is_set():
                                 print("Starting profiling mode.")
@@ -729,17 +601,14 @@ def main():
                                 does_not_have_profile_event.clear()  # Reset after starting profiling
 
                             if has_profile_event.is_set():
-                                returning_user_event.set()
                                 print("Attempting Recognition.")
-                                recognition_thread = threading.Thread(target=attempt_recognition, args=(cap, face_detection, frame_rgb, face_detected_event, conn, profile_mode_event))
+                                recognition_thread = threading.Thread(target=attempt_recognition, args=(cap, face_detection, frame_rgb, embeddings, face_detected_event, user_ids, conn, profile_mode_event))
                                 recognition_thread.start()
                                 has_profile_event.clear()  # Reset after starting profiling
 
                             if recognition_failure_event.is_set():
                                 print("Attempting Recognition.")
                                 recognition_thread.join()
-                                if conversation_thread and conversation_thread.is_alive():
-                                    conversation_thread.join()
                                 profile_from_recognition_thread = threading.Thread(target=start_profiling_thread, args=(conn, cap, face_detection, frame_queue))
                                 profile_from_recognition_thread.start()
                                 recognition_failure_event.clear()  # Reset after starting profiling
@@ -762,21 +631,18 @@ def main():
 
                             
                             if conversation_ended_event.is_set():
-                                listening_enabled = False
                                 modeText = "State: Idle"
                                 conversation_thread.join()
-                                if recognition_thread and recognition_thread.is_alive():
-                                    recognition_thread.join() # Stop recognition - Assuming user leaves after exiting conversation
-                                conversation = conversation_initial_setup.copy()
-                                print("Conversation completed and cleared. Ready for new face detection. \
-                                      Conversation contents:\n")
-                                print_conversation(conversation)
+                                print("Conversation completed. Ready for new face detection.")
                                 face_detected_time = None  # Reset to detect new face
                                 face_detected_event.clear()  # Allow new face detection
                                 conversation_ended_event.clear()  # Reset profiling event
 
                             # Drawing bounding boxes and other UI updates here...
 
+                            if profile_created.is_set():
+                                frame_queue.put(frame_rgb)  # Correct use of queue instance
+                                
                         else:
                             face_detected_time = None  # Reset the timer if no face is detected
 

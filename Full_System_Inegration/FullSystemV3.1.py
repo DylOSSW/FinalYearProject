@@ -10,7 +10,7 @@ import mediapipe as mp
 import torch
 import pygame
 from database_operations_no_encryption import create_connection, create_tables, insert_user_profile, insert_embedding, delete_old_records, delete_database_on_exit
-from FullSystemV3_imports import live_speech_to_text, get_user_consent_for_recognition_attempt, play_audio, get_user_age, get_user_name
+from FullSystemV3_imports_with_playsound import live_speech_to_text, get_user_consent_for_recognition_attempt, play_audio, get_user_age, get_user_name, get_user_consent_for_profiling
 import pygame
 import tempfile
 import os
@@ -185,9 +185,9 @@ def start_profiling_thread(conn, cap, face_detection, frame_queue):
     stop_event.clear()
 
     try:
-        '''if not get_user_consent_for_profiling():
+        if not get_user_consent_for_profiling():
             print("Exiting due to lack of consent.")
-            return'''
+            return
         
         #user_name = get_user_name()
         #user_age = get_user_age()
@@ -293,11 +293,13 @@ def main():
                                 if not face_detected_event.is_set():  # Check this only once
                                     face_detected_event.set()
                                     print("Face detected for 3 seconds, initiating check profile state")
-                                    threading.Thread(target=check_profile_state).start()
+                                    check_profile = threading.Thread(target=check_profile_state)
+                                    check_profile.start()
                                     face_detected_time = None  # Reset timer after action
 
                             if does_not_have_profile_event.is_set():
                                 print("Starting profiling mode.")
+                                check_profile.join()
                                 profile_thread = threading.Thread(target=start_profiling_thread, args=(conn, cap, face_detection, frame_queue))
                                 profile_thread.start()
                                 does_not_have_profile_event.clear()  # Reset after starting profiling
@@ -329,8 +331,7 @@ def main():
                                 face_detected_time = None  # Reset to detect new face
                                 face_detected_event.clear()  # Allow new face detection
                                 profile_completed_event.clear()  # Reset profiling event
-
-                            
+         
                             if conversation_ended_event.is_set():
                                 modeText = "State: Idle"
                                 conversation_thread.join()
@@ -345,7 +346,6 @@ def main():
                             face_detected_time = None  # Reset the timer if no face is detected
 
                         
-                      
                         ''' Operational Statistics'''
 
                         # Example of getting operational info
@@ -426,10 +426,6 @@ def main():
 
                         cv2.imshow('User View', display_frame)
                         cv2.imshow('Developer View', developer_frame)
-
-
-
-        
         
                         if cv2.waitKey(1) & 0xFF == ord('q'):
                             break

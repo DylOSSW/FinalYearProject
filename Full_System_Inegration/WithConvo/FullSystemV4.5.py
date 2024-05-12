@@ -18,7 +18,7 @@ from PIL import Image
 import mediapipe as mp
 import torch
 import pygame
-from database_operations_no_encryption import create_connection, create_tables, insert_user_profile, insert_embeddings_batch, insert_embedding, delete_old_records, delete_database_on_exit
+from database_operations_no_encryption import create_connection, create_tables, insert_user_profile, insert_embeddings, delete_old_records, delete_database_on_exit
 #from FullSystemV3_imports import live_speech_to_text, get_user_consent_for_recognition_attempt, play_audio, get_user_age, get_user_name, process_audio_data
 import pygame
 import tempfile
@@ -65,6 +65,7 @@ returning_user_event = threading.Event()
 conversation_running = False
 profiling_running = False
 recognition_running = False
+profile_created = threading.Event()
 
 audio_input_queue = queue.Queue()
 ambient_detected = False
@@ -529,50 +530,7 @@ def initialize_components():
     speech_processing_queue = queue.Queue()
     return  mp_face_detection,  stop_event, face_detected_event, profile_mode_event, speech_processing_queue
 
-'''def process_frames(face_detection, facenet_model, conn, user_id, stop_event, frame_queue):
-    
-    while not stop_event.is_set():
 
-        if not frame_queue.empty():
-            image = frame_queue.get()
-            #print("took frame")
-            embeddings = capture_embeddings_with_mediapipe(face_detection, facenet_model, image)
-            if embeddings:
-                for embedding in embeddings:
-                    if isinstance(embedding, torch.Tensor) and embedding.requires_grad:
-                        numpy_embedding = embedding.detach().cpu().numpy()
-                    else:
-                        numpy_embedding = embedding.cpu().numpy() if isinstance(embedding, torch.Tensor) else embedding
-                    print("Calling insert")
-                    insert_embedding(conn, user_id, numpy_embedding.flatten())
-            frame_queue.task_done()'''
-
-def process_frames(face_detection, facenet_model, conn, user_id, stop_event, frame_queue, batch_size=10):
-    embeddings_batch = []
-
-    while not stop_event.is_set():
-        if not frame_queue.empty():
-            image = frame_queue.get()
-            embeddings = capture_embeddings_with_mediapipe(face_detection, facenet_model, image)
-            if embeddings:
-                for embedding in embeddings:
-                    if isinstance(embedding, torch.Tensor) and embedding.requires_grad:
-                        numpy_embedding = embedding.detach().cpu().numpy()
-                    else:
-                        numpy_embedding = embedding.cpu().numpy() if isinstance(embedding, torch.Tensor) else embedding
-
-                    embeddings_batch.append(numpy_embedding.flatten())
-                    if len(embeddings_batch) >= batch_size:
-                        print("Batch insert")
-                        insert_embeddings_batch(conn, user_id, embeddings_batch)
-                        embeddings_batch = []
-
-            frame_queue.task_done()
-
-    # Handle the remaining embeddings in the batch after the loop finishes
-    if embeddings_batch:
-        print("Final batch insert")
-        insert_embeddings_batch(conn, user_id, embeddings_batch)
 
 
 def capture_embeddings_with_mediapipe(face_detection, facenet_model, image):
@@ -605,10 +563,7 @@ def capture_embeddings_with_mediapipe(face_detection, facenet_model, image):
 def capture_for_duration(cap, frame_queue, duration):
     start_time = time.time()
     while time.time() - start_time < duration:
-        ret, frame = cap.read()
-        if ret:
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            frame_queue.put(frame_rgb)  # Correct use of queue instance
+        time.sleep(0.01)  # Makes the loop wait for 10ms
 
 
 def get_all_embeddings(conn):
@@ -749,7 +704,25 @@ def attempt_recognition(cap, face_detection, frame_rgb, face_detected_event, con
                             break  # Exit the loop after failed recognition
             recognition_frame_queue.task_done()
         
+def process_frames(face_detection, facenet_model, conn, user_name, user_age, stop_event, frame_queue):
 
+    user_id = insert_user_profile(conn, user_name, user_age)
+    
+    while not stop_event.is_set():
+
+        if not frame_queue.empty():
+            image = frame_queue.get()
+            #print("took frame")
+            embeddings = capture_embeddings_with_mediapipe(face_detection, facenet_model, image)
+            if embeddings:
+                for embedding in embeddings:
+                    if isinstance(embedding, torch.Tensor) and embedding.requires_grad:
+                        numpy_embedding = embedding.detach().cpu().numpy()
+                    else:
+                        numpy_embedding = embedding.cpu().numpy() if isinstance(embedding, torch.Tensor) else embedding
+                    print("Calling insert")
+                    insert_embeddings(conn, user_id, numpy_embedding.flatten())
+            frame_queue.task_done()
 
 # Rest of the code remains the same
 
@@ -769,18 +742,19 @@ def start_profiling_thread(conn, cap, face_detection, frame_queue):
         
         user_name = get_user_name()
         user_age = get_user_age()
-        # Insert user profile and get user ID
-        user_id = insert_user_profile(conn, user_name, user_age)
+
         
         facenet_model = InceptionResnetV1(pretrained='vggface2').eval()
-        processing_thread = threading.Thread(target=process_frames, args=(face_detection, facenet_model, conn, user_id, stop_event, frame_queue))
+        processing_thread = threading.Thread(target=process_frames, args=(face_detection, facenet_model, conn, user_name, user_age, stop_event, frame_queue))
         processing_thread.start()
-
+        
+        profile_created.set()
         instructions = ["I will now peform some calibration to capture your facial features from a few angles for better accuracy.","Please listen to the following instructions.","Please face forward for a few seconds.", "Now, please slowly turn to your left.", "And now, please slowly turn to your right."]
         for instruction in instructions:
             play_audio(instruction)
             capture_for_duration(cap, frame_queue, duration=6)
 
+        profile_created.clear()
         play_audio("Thank you, for providing your information, your profile is now complete!")
         
         stop_event.set()
@@ -789,7 +763,6 @@ def start_profiling_thread(conn, cap, face_detection, frame_queue):
 
     finally:
         # Notify the main thread that profiling is done
-        clear_queue(frame_queue)
         profile_completed_event.set()
 
 def check_profile_state():
@@ -935,6 +908,10 @@ def main():
                                 face_detected_event.clear()  # Allow new face detection
                                 conversation_ended_event.clear()  # Reset profiling event
 
+                            
+                            if profile_created.is_set():
+                                frame_queue.put(frame_rgb)  # Correct use of queue instance
+
                             # Drawing bounding boxes and other UI updates here...
 
                         else:
@@ -1037,5 +1014,9 @@ def main():
     else:
         print("Failed to create a database connection.")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
+    profiler = cProfile.Profile()
+    profiler.enable()
     main()
+    profiler.disable()
+    profiler.dump_stats("profile_result.prof")

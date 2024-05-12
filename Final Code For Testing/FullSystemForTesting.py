@@ -1,3 +1,12 @@
+# Student Names:   Dylan Holmwood and Kristers Martukans
+# Student Numbers: D21124331 and D21124318
+# Date:            21st May 2024
+# Module Title:    Final Year Project
+# Module Code:     PROJ4004
+# Supervisors:     Paula Kelly and Damon Berry 
+# Script Name:     MainSystem.py
+# Description:     This file serves as the.....
+
 import cv2
 import time
 import threading
@@ -9,7 +18,7 @@ from PIL import Image
 import mediapipe as mp
 import torch
 import pygame
-from database_operations_no_encryption import create_connection, create_tables, insert_user_profile, insert_embedding, delete_old_records, delete_database_on_exit
+from database_operations_no_encryption import create_connection, create_tables, insert_user_profile, insert_embeddings, delete_old_records, delete_database_on_exit
 #from FullSystemV3_imports import live_speech_to_text, get_user_consent_for_recognition_attempt, play_audio, get_user_age, get_user_name, process_audio_data
 import pygame
 import tempfile
@@ -29,6 +38,8 @@ from playsound import playsound
 import psutil
 import GPUtil
 import re
+from scipy.signal import butter, lfilter
+
 
 # Setup logging configuration
 logging.basicConfig(filename='application_audit.log', level=logging.INFO, filemode='w', format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -51,6 +62,10 @@ recognition_failure_event = threading.Event()       # Recognition Failure Event:
 conversation_ended_event = threading.Event()        # Conversation Ended Event: Conversation has ended.
 recognition_running_event = threading.Event()
 returning_user_event = threading.Event()
+conversation_running = False
+profiling_running = False
+recognition_running = False
+profile_created = threading.Event()
 
 audio_input_queue = queue.Queue()
 ambient_detected = False
@@ -59,8 +74,6 @@ listening_enabled = False  # Flag to control the listening process
 farewell = ["bye","goodbye","see you later"]
 # Create a regex pattern that matches any of the farewell phrases, ignoring case and handling punctuation
 farewell_pattern = re.compile(r'\b(?:' + '|'.join(re.escape(word) for word in farewell) + r')\b', re.IGNORECASE)
-
-
 
 audio_files = {
     "Hello there my name is Onyx.": "greeting_text.mp3",
@@ -89,12 +102,17 @@ audio_files = {
     "Now, please slowly turn to your left.": "turn_left.mp3",
     "And now, please slowly turn to your right.": "turn_right.mp3",
     "Have you previously attended this session, provided consent and registered a profile?": "previous_consent.mp3",
-    "Okay, so I will no begin to create a profile for you.": "profile_initiation.mp3",
+    "Okay, so I will now begin to create a profile for you.": "profile_initiation.mp3",
     "Oh, you don't have a profile? Let's get one setup for you!": "no_profile.mp3",
     "During this session, facial features are collected for facial recognition purposes, while demographic data such as name and age are utilized to personalize the experience. All collected data will be encrypted and stored securely. It is important to note that the collected data will only be retained for a maximum of one hour and will be automatically deleted thereafter to ensure privacy and data security. Additionally, it's essential to clarify that ChatGPT is utilized for generating responses, and the user's voice is sent to OpenAI (a third-party provider) for the purpose of speech-to-text (STT) conversion. It's worth mentioning that for both STT and text-to-speech (TTS) functionalities, there is zero data retention. OpenAI's policy states that data sent for STT and TTS purposes is processed only and not retained beyond the duration of the session. This ensures that user privacy is maintained, and no inputs are stored in these processes.":
     "data_usage_and_privacy_statement.mp3",
     "During this session, we'll capture and analyze your facial features to personalize your experience. Would you like to know more?":
-    "brief_data_statement.mp3"
+    "brief_data_statement.mp3",
+    "I couldn't understand the name, please try again.":"unclear_name_error.mp3",
+    "Sorry I couldn't make out your age, could you please say it again?.": "unclear_age_error.mp3",
+    "Please listen to the following instructions.": "instruction_intro.mp3",
+    "Thank you, for providing your information, your profile is now complete!": "profiling_completed_message.mp3",
+    "I will now peform some calibration to capture your facial features from a few angles for better accuracy.": "calibration_message.mp3"
 }
 conversation_initial_setup = [
     {
@@ -172,21 +190,22 @@ def generate_audio(response_from_gpt,audio_file_path):
     
 
 # Function to play the audio file using playsound
-def play_response(audio_file_path):
+def play_response(audio_file_path, retries = 3, delay = 2):
     global listening_enabled
     if listening_enabled:
         listening_enabled = False
-    # Initialize pygame mixer
-    pygame.mixer.init()
-    pygame.mixer.music.load(audio_file_path)
-    pygame.mixer.music.play()
-    while pygame.mixer.music.get_busy():  # Check if the file is still playing
-        pygame.time.Clock().tick(1)  # Wait briefly
-    # Stop and quit pygame mixer
-    pygame.mixer.music.stop()
-    pygame.mixer.quit()
+    for attempt in range(retries):
+            try:
+                playsound(audio_file_path)
+                break
+            except Exception as e:
+                print(f"Error playing audio file {audio_file_path}: {e}")
+                time.sleep(delay)  # Delay before retrying
+    
+    #time.sleep(1)
+    listening_enabled = True
 
-def play_audio(message_key, name=None):
+def play_audio(message_key, name=None, retries = 3, delay = 2):
     global listening_enabled
     try:
         if listening_enabled:
@@ -198,66 +217,78 @@ def play_audio(message_key, name=None):
         audio_file_path = 'prompts/' + audio_files[message_key]
         print(f"Playing audio: {audio_file_path}")
         
-        # Load and play the audio file using pygame
-        play_response(audio_file_path)
+        # Load and play the audio file using playsound
+        for attempt in range(retries):
+            try:
+                playsound(audio_file_path)
+                break
+            except Exception as e:
+                print(f"Error playing audio file {audio_file_path}: {e}")
+                time.sleep(delay)  # Delay before retrying
         
     except Exception as e:
         print(f"Error playing audio file {audio_file_path}: {e}")
     finally:
         listening_enabled = True
-      
-# Function to perform live speech-to-text
-def live_speech_to_text(audio_input_queue,wait_time=70):
+
+def bandpass_filter(data, lowcut, highcut, fs, order=5):
+    nyq = 0.5 * fs
+    low = lowcut / nyq
+    high = highcut / nyq
+    b, a = butter(order, [low, high], btype='band')
+    y = lfilter(b, a, data)
+    return y
+   
+def live_speech_to_text(audio_input_queue, wait_time=70):
     global ambient_detected
     global speech_volume
     global listening_enabled
-    
+
     FORMAT = pyaudio.paInt16
     CHANNELS = 1
     RATE = 44100
     CHUNK = 1024
 
     audio = pyaudio.PyAudio()
-
-    stream = audio.open(
-        format=FORMAT,
-        channels=CHANNELS,
-        rate=RATE,
-        input=True,
-        frames_per_buffer=CHUNK
-    )
+    stream = audio.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
 
     frames = []
     recording = False
     frames_recorded = 0
 
     while True:
-        #print(listening_enabled)
         frames_recorded += 1
-        data = stream.read(CHUNK)
+        data = stream.read(CHUNK, exception_on_overflow=False)  # Read data from the stream
+
+        # Convert byte data to numpy array
+        audio_data = np.frombuffer(data, dtype=np.int16)
+        # Filter the data
+        filtered_data = bandpass_filter(audio_data, 300, 3400, RATE)
+
+        # Convert back to bytes
+        data = filtered_data.astype(np.int16).tobytes()
+
+        # Calculate RMS of the filtered data
         rms = audioop.rms(data, 2)
 
         if not ambient_detected:
             if frames_recorded < 40:
                 if frames_recorded == 1:
                     print("Detecting ambient noise...")
-                if frames_recorded > 5:
-                    if speech_volume < rms:
-                        speech_volume = rms
+                if speech_volume < rms:
+                    speech_volume = rms
                 continue
             elif frames_recorded == 40:
                 print("Listening...")
-                speech_volume = speech_volume * 3
+                speech_volume = speech_volume * 3  # Consider adjusting this based on testing
                 ambient_detected = True
 
         if rms > speech_volume and listening_enabled:
             recording = True
-            #print("Recording ENABLED")
             frames_recorded = 0
         elif recording and frames_recorded > wait_time:
             recording = False
             
-
             wf = wave.open("audio.wav", 'wb')
             wf.setnchannels(CHANNELS)
             wf.setsampwidth(audio.get_sample_size(FORMAT))
@@ -270,19 +301,19 @@ def live_speech_to_text(audio_input_queue,wait_time=70):
                 model="whisper-1",
                 file=audio_file
             )
-            
             audio_file.close()  # Close the file after usage
+            os.remove("audio.wav")  # Remove the audio file
 
-            os.remove("audio.wav")
-
-            print("Result org: ",result)
-            print("Result text: ",result.text)
+            print("Result org: ", result)
+            print("Result text: ", result.text)
             audio_input_queue.put(result.text)
+            
                 
             if farewell_pattern.search(result.text):
                 if conversation_thread and conversation_thread.is_alive():
                     print("Farewell phrase registered - Setting conversation ended event")
                     conversation_ended_event.set()
+                
             frames = []
 
         if recording:
@@ -296,7 +327,7 @@ def process_audio_data(audio_input_queue):
     if not listening_enabled:
         listening_enabled = True
         print("Listening enabled mode change: ", listening_enabled)
-    while not conversation_ended_event.is_set():
+    while not conversation_ended_event.is_set() and not recognition_failure_event.is_set():
         #listening_enabled = True
         try:
             text = audio_input_queue.get()
@@ -313,38 +344,140 @@ def process_audio_data(audio_input_queue):
                 print("Error: Audio file path is None")
             listening_enabled = True
 
+        except queue.Empty:
+            continue
         except PermissionError as pe:
             print(f"Permission denied error: {pe}")
 
         except Exception as e:
             print(f"Error in audio processing: {e}")
+        finally:
+            clear_queue(audio_input_queue)
+            conversation_running = False
+
+def get_user_name(prompt_key="Please say your name.", attempt_limit=3, timeout=10):
+    global listening_enabled
+    attempts = 0
+    while attempts < attempt_limit:
+        if not listening_enabled:
+            listening_enabled = True
+
+        start_time = time.time()  # Record the start time for each attempt
+        try:
+            # Play the prompt from a pre-recorded file
+            play_audio(prompt_key)
+            while time.time() - start_time < timeout:  # Check elapsed time
+                try:
+                    response = audio_input_queue.get(timeout=timeout)
+                    print("Received:", response)
+
+                    # Analyze the response to determine if it's clear
+                    prompt_analysis = f"Please analyze the response: '{response}'. I want you to only return the name as a single word or the word 'unclear'. If there is a reasonable name, just return that; if there is an unclear sentence where you can't make out the name, just return 'unclear'. Only return the name or the word unclear. A one word single response nothing else."
+                    
+                    name = chat_with_gpt(prompt_analysis).strip().lower()
+                    print("for debuggin", name)
+                    if "unclear" in name:
+                        print("The response was unclear or invalid.")
+                        play_audio("I couldn't understand the name, please try again.")
+                        attempts += 1  # Ensure the next attempt increments if the response is unclear
+                        break  # Exit this attempt and try again
+                    else:
+                        print("Chat Answer: ", name)
+                        logging.info("User name has been received: %s", name)
+                        play_audio("Thank you for providing your name")
+                        listening_enabled = False
+                        return name  # Return the clear name
+
+                except queue.Empty:
+                    play_audio("I didn't catch that. Let's try again.")
+
+        except Exception as e:
+            print("Error while processing input:", str(e))
+            play_audio("An error occurred. Let's try again.")
+
+        # If timeout is reached without a valid response
+        if time.time() - start_time >= timeout:
+            play_audio("Sorry, I couldn't hear anything.")
+            attempts += 1
+
+    listening_enabled = False
+    return None  # Return None if all attempts fail
+
+def get_user_age(prompt_key="Please tell me your age.", attempt_limit=3, timeout=10):
+    global listening_enabled
+    attempts = 0
+    while attempts < attempt_limit:
+        if not listening_enabled:
+            listening_enabled = True
+
+        start_time = time.time()  # Record the start time for each attempt
+        try:
+            # Play the prompt from a pre-recorded file
+            play_audio(prompt_key)
+            while time.time() - start_time < timeout:  # Check elapsed time
+                try:
+                    response = audio_input_queue.get(timeout=timeout)
+                    print("Received:", response)
+
+                    # Analyze the response to determine if it's clear and valid
+                    prompt_analysis = f"Please analyze the response: '{response}'. I want you to only return the age or the word 'unclear'. If there is a reasonable age, just return that; if there is an unclear sentence where you can't make out the age, just return 'unclear'. If you return the age do not return it with a full stop or any other words just the age. Whether it be age or unclear you should only return a one word response."
+                    age_text = chat_with_gpt(prompt_analysis).strip().lower()
+                    print("Debugging:", age_text)
+                    if "unclear" in age_text:
+                        print("The response was unclear or invalid.")
+                        play_audio("Sorry I couldn't make out your age, could you please say it again?.")
+                        attempts += 1  # Ensure the next attempt increments if the response is unclear
+                        break  # Exit this attempt and try again
+                    else:
+                        try:
+                            age = int(age_text)
+                            print("Extracted Age:", age)
+                            logging.info("User age has been received: %d", age)
+                            play_audio("Thank you. I have recorded your age.")
+                            listening_enabled = False
+                            return age  # Return the age if it's clear and valid
+                        except ValueError:
+                            print("Failed to extract a valid age.")
+                            play_audio("Your response didn't seem to include an age. Let's try again.")
+                            attempts += 1
+                            break
+
+                except queue.Empty:
+                    play_audio("I didn't catch that. Let's try again.")
+
+        except Exception as e:
+            print("Error while processing input:", str(e))
+            play_audio("An error occurred. Let's try again.")
+
+        # If timeout is reached without a valid response
+        if time.time() - start_time >= timeout:
+            play_audio("Sorry, I couldn't hear anything.")
+            attempts += 1
+
+    listening_enabled = False
+    return None  # Return None if all attempts fail
 
 
-
-
-def get_user_input_with_retries(prompt_key, attempt_limit=3):
+def get_user_input_with_retries(prompt_key, attempt_limit=3, timeout=10):
     print("Getting input with retries")
     global listening_enabled
     attempts = 0
     while attempts < attempt_limit:
         if not listening_enabled:
             listening_enabled = True
+        start_time = time.time()  # Record the start time for each attempt
         try:
             # Play the prompt from a pre-recorded file
             play_audio(prompt_key)
-            try:
-                response = audio_input_queue.get()
-                print(response)
-                
-                return response
-            except queue.Empty:
-                attempts += 1
-                play_audio("I didn't catch that. Let's try again.")
-                if attempts == 2:
-                    attempts += 1
-                    play_audio("I couldn't understand that. Let's try again.")
-                elif attempts >= attempt_limit:
-                    play_audio("Sorry, I couldn't hear anything.")
+            while time.time() - start_time < timeout:  # Check elapsed time
+                try:
+                    response = audio_input_queue.get(timeout=timeout)
+                    print(response)
+                    return response
+                except queue.Empty:
+                    play_audio("I didn't catch that. Let's try again.")
+            # If timeout is reached without a response
+            play_audio("Sorry, I couldn't hear anything.")
         except Exception as e:
             attempts += 1
             play_audio("An error occurred. Let's try again.")
@@ -352,6 +485,7 @@ def get_user_input_with_retries(prompt_key, attempt_limit=3):
                 play_audio("Sorry, I couldn't process your input after several attempts.")
     listening_enabled = False
     return None
+
 
 def get_user_consent_for_profiling():
     # Brief explanation of the session's purpose
@@ -373,41 +507,6 @@ def get_user_consent_for_profiling():
         logging.info("User consent has not been given.")
         return False
     
-    
-def get_user_name():
-    name_response = get_user_input_with_retries("Please say your name.")
-    print("name_response",name_response)
-    if name_response:
-        print("inside name response if")
-        chat = f"What is the name in the phrase '{name_response}'? Return just the name in your answer, nothing else."
-        name = chat_with_gpt(chat)
-        print("Chat Answer: ", name)
-        logging.info("User name has been received.")
-        play_audio("Thank you for providing your name")  # Handling dynamic insertion
-        return name
-    else:
-        print("Failed to capture the user's name.")
-        return None
-
-def get_user_age():
-    age_response = get_user_input_with_retries("Please tell me your age.")
-    if age_response:
-        chat = f"How old is someone who says, '{age_response}'? Return just the age in your answer."
-        age_text = chat_with_gpt(chat)
-        try:
-            age = int(age_text)
-            print("Extracted Age: ", age)
-            logging.info("User age has been received.")
-            play_audio("Thank you. I have recorded your age.")
-            return age
-        except ValueError:
-            print("Failed to extract a valid age.")
-            play_audio("I couldn't understand your age. Let's try again.")
-            return None
-    else:
-        print("Failed to capture the user's age.")
-        play_audio("I'm sorry, I couldn't hear you clearly.")
-        return None
     
 def get_user_consent_for_recognition_attempt():
     consent_response = get_user_input_with_retries("Have you previously attended this session, provided consent and registered a profile?")
@@ -431,25 +530,8 @@ def initialize_components():
     speech_processing_queue = queue.Queue()
     return  mp_face_detection,  stop_event, face_detected_event, profile_mode_event, speech_processing_queue
 
-def process_frames(face_detection, facenet_model, conn, user_name, user_age, stop_event, frame_queue):
 
-    user_id = insert_user_profile(conn, user_name, user_age)
-    
-    while not stop_event.is_set():
 
-        if not frame_queue.empty():
-            image = frame_queue.get()
-            #print("took frame")
-            embeddings = capture_embeddings_with_mediapipe(face_detection, facenet_model, image)
-            if embeddings:
-                for embedding in embeddings:
-                    if isinstance(embedding, torch.Tensor) and embedding.requires_grad:
-                        numpy_embedding = embedding.detach().cpu().numpy()
-                    else:
-                        numpy_embedding = embedding.cpu().numpy() if isinstance(embedding, torch.Tensor) else embedding
-                    print("Calling insert")
-                    insert_embedding(conn, user_id, numpy_embedding.flatten())
-            frame_queue.task_done()
 
 def capture_embeddings_with_mediapipe(face_detection, facenet_model, image):
     """
@@ -481,12 +563,8 @@ def capture_embeddings_with_mediapipe(face_detection, facenet_model, image):
 def capture_for_duration(cap, frame_queue, duration):
     start_time = time.time()
     while time.time() - start_time < duration:
-        ret, frame = cap.read()
-        if ret:
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            frame_queue.put(frame_rgb)  # Correct use of queue instance
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+        time.sleep(0.01)  # Makes the loop wait for 10ms
+
 
 def get_all_embeddings(conn):
 
@@ -545,14 +623,17 @@ def attempt_recognition(cap, face_detection, frame_rgb, face_detected_event, con
     retry_counter = 0
     #Count positive matches
     num_matches = 0
-    
+    print("Matches: ",num_matches)
+    print(recognition_count, retry_max, match_threshold, retry_counter)
     global modeText
     user_ids, embeddings = get_all_embeddings(conn)
     facenet_model = InceptionResnetV1(pretrained='vggface2').eval()
     modeText = "State: Recognition"
     recognition_running_event.set()
     
-    while not conversation_ended_event.is_set() or recognition_failure_event.is_set():
+    while not recognition_failure_event.is_set():
+        if conversation_ended_event.is_set():
+            break
         if not recognition_frame_queue.empty():
             captured_frames = []
             matched_frame_indexes = []  # Store indexes of frames with matches
@@ -572,20 +653,24 @@ def attempt_recognition(cap, face_detection, frame_rgb, face_detected_event, con
                     closest_index = find_closest_embedding(captured_embedding_np, embeddings)
                     if closest_index != -1:
                         user_id = user_ids[closest_index]
-                        print(f"Hello there, Recognized User ID {user_id}!")
+                        #print(f"Hello there, Recognized User ID {user_id}!")
                         if returning_user_event.is_set():
-                            returning_user_event.clear()
+                            
                             existing_user_name = get_returning_user_name(conn, user_id)
                             returning_user_remark = f"It's me, {existing_user_name}."
+                            print(returning_user_remark)
                             returning_user_greeting = chat_with_gpt(returning_user_remark)
                             audio_file_path = "temp_audio.mp3"  # Temporary file path for the audio
                             generate_audio(returning_user_greeting, audio_file_path)
+                            
                             if audio_file_path is not None:
                                 play_response(audio_file_path)
                                 #playsound(None)  # Close the audio player
                                 os.remove(audio_file_path)  # Remove the temporary audio file
                             else:
                                 print("Error: Audio file path is None")
+                            
+                            returning_user_event.clear()
                         retry_counter = 0
                         num_matches += 1
                         matched_frame_indexes.append(index)  # Store index of matching frame
@@ -618,7 +703,26 @@ def attempt_recognition(cap, face_detection, frame_rgb, face_detected_event, con
                             
                             break  # Exit the loop after failed recognition
             recognition_frame_queue.task_done()
+        
+def process_frames(face_detection, facenet_model, conn, user_name, user_age, stop_event, frame_queue):
 
+    user_id = insert_user_profile(conn, user_name, user_age)
+    
+    while not stop_event.is_set():
+
+        if not frame_queue.empty():
+            image = frame_queue.get()
+            #print("took frame")
+            embeddings = capture_embeddings_with_mediapipe(face_detection, facenet_model, image)
+            if embeddings:
+                for embedding in embeddings:
+                    if isinstance(embedding, torch.Tensor) and embedding.requires_grad:
+                        numpy_embedding = embedding.detach().cpu().numpy()
+                    else:
+                        numpy_embedding = embedding.cpu().numpy() if isinstance(embedding, torch.Tensor) else embedding
+                    print("Calling insert")
+                    insert_embeddings(conn, user_id, numpy_embedding.flatten())
+            frame_queue.task_done()
 
 # Rest of the code remains the same
 
@@ -634,20 +738,24 @@ def start_profiling_thread(conn, cap, face_detection, frame_queue):
             profile_completed_event.set()
             return  # Skip profiling if consent is not obtained
         
-        play_audio("Okay, so I will no begin to create a profile for you.")
+        play_audio("Okay, so I will now begin to create a profile for you.")
         
         user_name = get_user_name()
         user_age = get_user_age()
-        #user_name = "Dylan"
-        #user_age = 26
+
+        
         facenet_model = InceptionResnetV1(pretrained='vggface2').eval()
         processing_thread = threading.Thread(target=process_frames, args=(face_detection, facenet_model, conn, user_name, user_age, stop_event, frame_queue))
         processing_thread.start()
-
-        instructions = ["Please face forward for a few seconds.", "Now, please slowly turn to your left.", "And now, please slowly turn to your right."]
+        
+        profile_created.set()
+        instructions = ["I will now peform some calibration to capture your facial features from a few angles for better accuracy.","Please listen to the following instructions.","Please face forward for a few seconds.", "Now, please slowly turn to your left.", "And now, please slowly turn to your right."]
         for instruction in instructions:
             play_audio(instruction)
             capture_for_duration(cap, frame_queue, duration=6)
+
+        profile_created.clear()
+        play_audio("Thank you, for providing your information, your profile is now complete!")
         
         stop_event.set()
         processing_thread.join()
@@ -672,13 +780,18 @@ def check_profile_state():
          print("User confirmed not having a profile.")
 
 
+def clear_queue(queue):
+    with queue.mutex:
+        queue.queue.clear()
+
+
 def main():
     mp_face_detection, stop_event, face_detected_event, profile_mode_event, speech_processing_queue = initialize_components()
     db_file = 'MYDB2.db'
     conn = create_connection(db_file)
     speech_thread = threading.Thread(target=live_speech_to_text, args=(audio_input_queue,))
     speech_thread.start()
-    global modeText, listening_enabled, conversation_thread, conversation, conversation_initial_setup
+    global modeText, listening_enabled, conversation_thread, conversation, conversation_initial_setup, conversation_running
     if conn:
         create_tables(conn)
         cap = cv2.VideoCapture(0)
@@ -714,7 +827,8 @@ def main():
                                 if not face_detected_event.is_set():  # Check this only once
                                     face_detected_event.set()
                                     print("Face detected for 3 seconds, initiating check profile state")
-                                    threading.Thread(target=check_profile_state).start()
+                                    check_profile_thread = threading.Thread(target=check_profile_state)
+                                    check_profile_thread.start()
                                     face_detected_time = None  # Reset timer after action
                                 
                             
@@ -724,28 +838,43 @@ def main():
 
                             if does_not_have_profile_event.is_set():
                                 print("Starting profiling mode.")
+                                clear_queue(frame_queue)
                                 profile_thread = threading.Thread(target=start_profiling_thread, args=(conn, cap, face_detection, frame_queue))
                                 profile_thread.start()
+                                check_profile_thread.join()
                                 does_not_have_profile_event.clear()  # Reset after starting profiling
 
                             if has_profile_event.is_set():
                                 returning_user_event.set()
+                                clear_queue(recognition_frame_queue)
+
                                 print("Attempting Recognition.")
                                 recognition_thread = threading.Thread(target=attempt_recognition, args=(cap, face_detection, frame_rgb, face_detected_event, conn, profile_mode_event))
                                 recognition_thread.start()
+                                check_profile_thread.join()
                                 has_profile_event.clear()  # Reset after starting profiling
 
                             if recognition_failure_event.is_set():
-                                print("Attempting Recognition.")
+                                listening_enabled = False
+                                print("---RECOGNITION FAILURE EVENT IS SET---")
                                 recognition_thread.join()
+                                print("---RECOG THREAD JOINED---")
                                 if conversation_thread and conversation_thread.is_alive():
+                                    print("---CONVO ALSO ON : ENDING---")
                                     conversation_thread.join()
-                                profile_from_recognition_thread = threading.Thread(target=start_profiling_thread, args=(conn, cap, face_detection, frame_queue))
-                                profile_from_recognition_thread.start()
+                                    conversation_thread = None
+                                    #conversation_ended_event.set()
+                                
+                                clear_queue(frame_queue)
+                                profile_thread = threading.Thread(target=start_profiling_thread, args=(conn, cap, face_detection, frame_queue))
+                                profile_thread.start()
                                 recognition_failure_event.clear()  # Reset after starting profiling
 
                             if recognition_success_event.is_set():
-                                print("Attempting Recognition.")
+                                if not conversation_running:
+                                    conversation_running = True
+                                print("Recognition Successful.")
+                                clear_queue(audio_input_queue)
                                 #recognition_thread.join()
                                 modeText = "State: Conversation"
                                 conversation_thread = threading.Thread(target=process_audio_data, args=(audio_input_queue,))
@@ -762,10 +891,14 @@ def main():
 
                             
                             if conversation_ended_event.is_set():
+                                print("---CONVO ENDED EVENT SET---")
+                                clear_queue(audio_input_queue)
                                 listening_enabled = False
                                 modeText = "State: Idle"
                                 conversation_thread.join()
+                                conversation_thread = None
                                 if recognition_thread and recognition_thread.is_alive():
+                                    #recognition_failure_event.set()
                                     recognition_thread.join() # Stop recognition - Assuming user leaves after exiting conversation
                                 conversation = conversation_initial_setup.copy()
                                 print("Conversation completed and cleared. Ready for new face detection. \
@@ -774,6 +907,10 @@ def main():
                                 face_detected_time = None  # Reset to detect new face
                                 face_detected_event.clear()  # Allow new face detection
                                 conversation_ended_event.clear()  # Reset profiling event
+
+                            
+                            if profile_created.is_set():
+                                frame_queue.put(frame_rgb)  # Correct use of queue instance
 
                             # Drawing bounding boxes and other UI updates here...
 
@@ -863,10 +1000,6 @@ def main():
                         cv2.imshow('User View', display_frame)
                         cv2.imshow('Developer View', developer_frame)
 
-
-
-        
-        
                         if cv2.waitKey(1) & 0xFF == ord('q'):
                             break
  
@@ -881,5 +1014,9 @@ def main():
     else:
         print("Failed to create a database connection.")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
+    profiler = cProfile.Profile()
+    profiler.enable()
     main()
+    profiler.disable()
+    profiler.dump_stats("profile_result.prof")
