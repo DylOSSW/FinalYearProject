@@ -534,6 +534,8 @@ def capture_embeddings_with_mediapipe(face_detection, facenet_model, image):
     """
     Detect faces using MediaPipe and capture facial embeddings using FaceNet.
     """
+    logging.info("Capturing facial embeddings with MediaPipe and FaceNet.")
+
     # Process the image with MediaPipe Face Detection
     results = face_detection.process(image)
     
@@ -554,7 +556,6 @@ def capture_embeddings_with_mediapipe(face_detection, facenet_model, image):
                 # Generate the embedding using FaceNet model
                 embedding = facenet_model(face_tensor)
                 embeddings.append(embedding)
-
     return embeddings
 
 def capture_for_duration(duration):
@@ -563,21 +564,28 @@ def capture_for_duration(duration):
         time.sleep(0.01)  # Makes the loop wait for 10ms
 
 def get_all_embeddings(conn):
-
     """Retrieve all user embeddings from the database."""
+    logging.info("Retrieving all user embeddings from the database.")
+
     embeddings = []
     user_ids = []
     sql = "SELECT user_id, embedding FROM facial_embeddings"
     cur = conn.cursor()
     cur.execute(sql)
     rows = cur.fetchall()
+    
     for row in rows:
-        user_ids.append(row[0])
-        embedding = np.frombuffer(row[1], dtype=np.float32)
+        user_id = row[0]
+        user_ids.append(user_id)
+        embedding_bytes = row[1]
+        embedding = np.frombuffer(embedding_bytes, dtype=np.float32)
         embeddings.append(embedding)
+
+    logging.info(f"Retrieved {len(embeddings)} embeddings for {len(user_ids)} users.")
     return user_ids, embeddings
 
 def get_returning_user_name(conn, user_id):
+    logging.info(f"Retrieving name for user ID: {user_id}")
 
     sql = "SELECT name FROM user_profiles WHERE id = ?"
     cur = conn.cursor()
@@ -585,8 +593,10 @@ def get_returning_user_name(conn, user_id):
     result = cur.fetchone()
 
     if result:
+        logging.info("User name retrieved successfully.")
         return result[0]
     else:
+        logging.warning("User name not found for the given user ID.")
         return None
 
 def find_closest_embedding(captured_embedding, embeddings, threshold=0.9):
@@ -595,6 +605,7 @@ def find_closest_embedding(captured_embedding, embeddings, threshold=0.9):
     """
     min_distance = float('inf')
     closest_embedding_index = -1
+
     for i, db_embedding in enumerate(embeddings):
         # Ensure captured_embedding is a NumPy array
         if isinstance(captured_embedding, torch.Tensor):
@@ -602,12 +613,17 @@ def find_closest_embedding(captured_embedding, embeddings, threshold=0.9):
 
         # Calculate the distance
         distance = np.linalg.norm(captured_embedding - db_embedding)
+        logging.debug(f"Distance between captured embedding and database embedding {i}: {distance}")
+        
         if distance < min_distance:
             min_distance = distance
             closest_embedding_index = i
 
     if min_distance > threshold:  # If no embedding is close enough, return no match
+        logging.info("No matching embedding found.")
         return -1
+    
+    logging.info(f"Closest embedding found at index {closest_embedding_index} with distance {min_distance}.")
     return closest_embedding_index
 
 def attempt_recognition(cap, face_detection, frame_rgb, face_detected_event, conn, profile_mode_event):
@@ -623,6 +639,7 @@ def attempt_recognition(cap, face_detection, frame_rgb, face_detected_event, con
     user_ids, embeddings = get_all_embeddings(conn)
     facenet_model = InceptionResnetV1(pretrained='vggface2').eval()
     modeText = "State: Recognition"
+    logging.info("Recognition State")
     recognition_running_event.set()
     
     while not recognition_failure_event.is_set():
@@ -700,13 +717,14 @@ def attempt_recognition(cap, face_detection, frame_rgb, face_detected_event, con
         
 def process_frames(face_detection, facenet_model, conn, user_name, user_age, stop_event, frame_queue):
 
+    logging.info("Inserting user name and age into database.")
     user_id = insert_user_profile(conn, user_name, user_age)
     
     while not stop_event.is_set():
 
         if not frame_queue.empty():
             image = frame_queue.get()
-            #print("took frame")
+            logging.info("Frame retrieved from queue.")
             embeddings = capture_embeddings_with_mediapipe(face_detection, facenet_model, image)
             if embeddings:
                 for embedding in embeddings:
@@ -714,19 +732,21 @@ def process_frames(face_detection, facenet_model, conn, user_name, user_age, sto
                         numpy_embedding = embedding.detach().cpu().numpy()
                     else:
                         numpy_embedding = embedding.cpu().numpy() if isinstance(embedding, torch.Tensor) else embedding
-                    print("Calling insert")
+                    logging.info("Calling insert_embeddings.")
                     insert_embeddings(conn, user_id, numpy_embedding.flatten())
             frame_queue.task_done()
+            logging.info("Frame processing completed.")
 
 def start_profiling_thread(conn, cap, face_detection, frame_queue):
     global modeText
     modeText = "State: Profiling"
+    logging.info("Profile State")
     # Reset the stop event in case it was set from a previous profiling session
     stop_event.clear()
 
     try:
         if not get_user_consent_for_profiling():
-            print("Exiting due to lack of consent.")
+            logging.info("Exiting Profiling due to lack of consent.")
             return  # Skip profiling if consent is not obtained
         
         play_audio("Okay, so I will now begin to create a profile for you.")
@@ -734,41 +754,51 @@ def start_profiling_thread(conn, cap, face_detection, frame_queue):
         user_name = get_user_name()
         user_age = get_user_age()
 
-        
+        logging.info("Loading facenet model.")
         facenet_model = InceptionResnetV1(pretrained='vggface2').eval()
+        logging.info("Facenet model loaded successfully.")
+
+        logging.info("Starting processing thread.")
         processing_thread = threading.Thread(target=process_frames, args=(face_detection, facenet_model, conn, user_name, user_age, stop_event, frame_queue))
         processing_thread.start()
         
+        logging.info("Giving user instructions")
         profile_created.set()
+        logging.info("Profile created event set.")
         instructions = ["I will now peform some calibration to capture your facial features from a few angles for better accuracy.","Please listen to the following instructions.","Please face forward for a few seconds.", "Now, please slowly turn to your left.", "And now, please slowly turn to your right."]
         for instruction in instructions:
             play_audio(instruction)
             capture_for_duration(duration=6)
 
         profile_created.clear()
+        logging.info("Profile created event cleared.")
         play_audio("Thank you, for providing your information, your profile is now complete!")
-        
+
         stop_event.set()
         processing_thread.join()
-        print("Profiling done")
+        logging.info("Profiling done")
 
     finally:
         # Notify the main thread that profiling is done
         profile_completed_event.set()
+        logging.info("Profiling completed event set.")
+
 
 def check_profile_state():
-
     global modeText
     modeText = "State: Check Profile"
+    logging.info("Check Profile State")
 
     check_profile = get_user_consent_for_recognition_attempt()
 
-    if check_profile == True:
-         has_profile_event.set()
-         print("User confirmed having a profile.")
+    if check_profile:
+        has_profile_event.set()
+        logging.info("User confirmed having a profile.")
+        print("User confirmed having a profile.")
     else:
-         does_not_have_profile_event.set()
-         print("User confirmed not having a profile.")
+        does_not_have_profile_event.set()
+        logging.info("User confirmed not having a profile.")
+        print("User confirmed not having a profile.")
 
 def clear_queue(queue):
     with queue.mutex:
