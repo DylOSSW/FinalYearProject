@@ -510,7 +510,7 @@ def get_user_consent_for_profiling():
         
 def get_user_consent_for_recognition_attempt():
     consent_response = get_user_input_with_retries("Have you previously attended this session, provided consent and registered a profile?")
-    print("Consent response.lower(): ", consent_response.lower())
+    #print("Consent response.lower(): ", consent_response.lower())
     if "yes" in consent_response.lower():
         play_audio("Thank you for your consent.")
         logging.info("User consent received.")
@@ -643,7 +643,7 @@ def attempt_recognition(cap, face_detection, frame_rgb, face_detected_event, con
     recognition_running_event.set()
     
     while not recognition_failure_event.is_set():
-        if conversation_ended_event.is_set():
+        if conversation_ended_event.is_set() or not face_detected_event.is_set():
             break
         if not recognition_frame_queue.empty():
             captured_frames = []
@@ -698,7 +698,7 @@ def attempt_recognition(cap, face_detection, frame_rgb, face_detected_event, con
                             else:
                                 continue
                         else:
-                            print(f"{3 - recognition_count} more recognitions needed for event.")
+                            print(f"{match_threshold - num_matches} more recognitions needed for event.")
 
                     else:
                         retry_counter+=1
@@ -810,7 +810,7 @@ def main():
     conn = create_connection(db_file)
     speech_thread = threading.Thread(target=live_speech_to_text, args=(audio_input_queue,))
     speech_thread.start()
-    global modeText, listening_enabled, conversation_thread, conversation, conversation_initial_setup, conversation_running
+    global modeText, listening_enabled, conversation_thread,recognition_thread,conversation, conversation_initial_setup, conversation_running
     if conn:
         create_tables(conn)
         cap = cv2.VideoCapture(0)
@@ -937,7 +937,25 @@ def main():
                             # Drawing bounding boxes and other UI updates here...
 
                         else:
+                            #face_detected_event.clear()  # Allow new face detection
                             face_detected_time = None  # Reset the timer if no face is detected
+                            if conversation_thread and conversation_thread.is_alive():
+                                    conversation_ended_event.set()
+                                    print("Convo alive, face not detected")
+                                    listening_enabled = False
+                                    audio_input_queue.put(None)
+                                    print("---CONVO ALSO ON : ENDING---")
+                                    conversation_thread.join()
+                                    conversation_thread = None
+                            if recognition_thread and recognition_thread.is_alive():
+                                recognition_failure_event.set()
+                                print("recog alive face not detected")
+                                #recognition_failure_event.set()
+                                recognition_thread.join() # Stop recognition - Assuming user leaves after exiting conversation
+                                conversation = conversation_initial_setup.copy()
+                            
+                            
+
 
                         
                       
