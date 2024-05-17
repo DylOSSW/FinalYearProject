@@ -67,8 +67,6 @@ conversation = conversation_initial_setup.copy()
 conversation_thread = None
 recognition_thread = None
 
-
-
 def load_openai_key():
     with open('openai_api.key', 'rb') as key_file:
         key = key_file.read().decode('utf-8')  # Decode bytes to string
@@ -116,15 +114,13 @@ def play_response(audio_file_path, retries=3, delay=2):
     if listening_enabled:
         listening_enabled = False
     for attempt in range(retries):
-        try:
-            playsound(audio_file_path)
-            break
-        except Exception as e:
-            print(f"Error playing audio file {audio_file_path}: {e}")
-            #time.sleep(delay)  # Delay before retrying
-    
+            try:
+                playsound(audio_file_path)
+                break
+            except Exception as e:
+                print(f"Error playing audio file {audio_file_path}: {e}")
+                time.sleep(delay)  # Delay before retrying    
     listening_enabled = True
-
 
 def play_audio(message_key, name=None, retries=3, delay=2):
 
@@ -163,7 +159,6 @@ def play_audio(message_key, name=None, retries=3, delay=2):
     finally:
         # Re-enable listening after audio playback or on error
         listening_enabled = True
-
 
 '''def bandpass_filter(data, lowcut, highcut, fs, order=5):
     nyq = 0.5 * fs
@@ -534,7 +529,7 @@ def get_user_consent_for_profiling():
         
 def get_user_consent_for_recognition_attempt():
     consent_response = get_user_input_with_retries("Have you previously attended this session, provided consent and registered a profile?")
-    print(consent_response)
+    #print("Consent response.lower(): ", consent_response.lower())
     if "yes" in consent_response.lower():
         play_audio("Thank you for your consent.")
         logging.info("User consent received.")
@@ -544,6 +539,38 @@ def get_user_consent_for_recognition_attempt():
         logging.info("User does not have a profile.")
         return False
 
+
+def capture_embeddings_with_mediapipe(face_detection, facenet_model, image):
+    """
+    Detect faces using MediaPipe and capture facial embeddings using FaceNet.
+    """
+
+    # Process the image with MediaPipe Face Detection
+    results = face_detection.process(image)
+    
+    embeddings = []
+    if results.detections:
+        for detection in results.detections:
+            bboxC = detection.location_data.relative_bounding_box
+            h, w, _ = image.shape
+            bbox = int(bboxC.xmin * w), int(bboxC.ymin * h), \
+                   int(bboxC.width * w), int(bboxC.height * h)
+            cropped_face = image[bbox[1]:bbox[1]+bbox[3], bbox[0]:bbox[0]+bbox[2]]
+            face_image = Image.fromarray(cropped_face)
+            face_image = face_image.resize((160, 160))
+            face_tensor = transforms.ToTensor()(face_image).unsqueeze(0)
+            
+            # Disable gradient calculations
+            with torch.no_grad():
+                # Generate the embedding using FaceNet model
+                embedding = facenet_model(face_tensor)
+                embeddings.append(embedding)
+    return embeddings
+
+def capture_for_duration(duration):
+    start_time = time.time()
+    while time.time() - start_time < duration:
+        time.sleep(0.01)  # Makes the loop wait for 10ms
 def find_closest_embedding(captured_embedding, embeddings, threshold=0.9):
     """
     Find the closest embedding in the database to the captured one, with a threshold for matching.
@@ -737,42 +764,26 @@ def start_profiling_thread(conn, face_detection, frame_queue):
 
         logging.info("Profiling completed event set.")
 
+def check_profile_state():
+    global modeText
+    modeText = "State: Check Profile"
+    logging.info("Check Profile State")
+
+    check_profile = get_user_consent_for_recognition_attempt()
+
+    if check_profile:
+        has_profile_event.set()
+        logging.info("User confirmed having a profile.")
+        print("User confirmed having a profile.")
+    else:
+        does_not_have_profile_event.set()
+        logging.info("User confirmed not having a profile.")
+        print("User confirmed not having a profile.")
+
 def clear_queue(queue):
     with queue.mutex:
         queue.queue.clear()
 
-
-def capture_embeddings_with_mediapipe(face_detection, facenet_model, image):
-    """
-    Detect faces using MediaPipe and capture facial embeddings using FaceNet.
-    """
-
-    # Process the image with MediaPipe Face Detection
-    results = face_detection.process(image)
-    
-    embeddings = []
-    if results.detections:
-        for detection in results.detections:
-            bboxC = detection.location_data.relative_bounding_box
-            h, w, _ = image.shape
-            bbox = int(bboxC.xmin * w), int(bboxC.ymin * h), \
-                   int(bboxC.width * w), int(bboxC.height * h)
-            cropped_face = image[bbox[1]:bbox[1]+bbox[3], bbox[0]:bbox[0]+bbox[2]]
-            face_image = Image.fromarray(cropped_face)
-            face_image = face_image.resize((160, 160))
-            face_tensor = transforms.ToTensor()(face_image).unsqueeze(0)
-            
-            # Disable gradient calculations
-            with torch.no_grad():
-                # Generate the embedding using FaceNet model
-                embedding = facenet_model(face_tensor)
-                embeddings.append(embedding)
-    return embeddings
-
-def capture_for_duration(duration):
-    start_time = time.time()
-    while time.time() - start_time < duration:
-        time.sleep(0.01)  # Makes the loop wait for 10ms
 def main():
     start_time = time.time()
     mp_face_detection = mp.solutions.face_detection
@@ -848,11 +859,11 @@ def main():
 
                             if recognition_failure_event.is_set():
                                 listening_enabled = False
-                                audio_input_queue.put(None)
                                 print("---RECOGNITION FAILURE EVENT IS SET---")
                                 recognition_thread.join()
                                 print("---RECOG THREAD JOINED---")
                                 if conversation_thread and conversation_thread.is_alive():
+                                    audio_input_queue.put(None)
                                     print("---CONVO ALSO ON : ENDING---")
                                     conversation_thread.join()
                                     conversation_thread = None
