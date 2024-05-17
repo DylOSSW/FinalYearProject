@@ -397,7 +397,7 @@ def get_user_age(prompt_key="Please tell me your age.", attempt_limit=3, timeout
                             return age  # Return the age if it's clear and valid
                         except ValueError:
                             print("Failed to extract a valid age.")
-                            play_audio("Your response didn't seem to include an age. Let's try again.")
+                            play_audio("Your response didn't seem to have a clear age in it.")
                             attempts += 1
                             break
 
@@ -538,7 +538,6 @@ def get_user_consent_for_recognition_attempt():
         play_audio("Oh, you don't have a profile? Let's get one setup for you!")
         logging.info("User does not have a profile.")
         return False
-
 
 def capture_embeddings_with_mediapipe(face_detection, facenet_model, image):
     """
