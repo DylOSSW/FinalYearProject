@@ -18,7 +18,7 @@ from PIL import Image
 import mediapipe as mp
 import torch
 import pygame
-from database_operations_no_encryption import create_connection, create_tables, insert_user_profile, insert_embeddings, delete_old_records, delete_database_on_exit
+from database_operations import create_connection, create_tables, insert_user_profile, insert_embeddings, delete_old_records, delete_database_on_exit
 #from FullSystemV3_imports import live_speech_to_text, get_user_consent_for_recognition_attempt, play_audio, get_user_age, get_user_name, process_audio_data
 import pygame
 import tempfile
@@ -103,9 +103,16 @@ audio_files = {
     "Have you previously attended this session, provided consent and registered a profile?": "previous_consent.mp3",
     "Okay, so I will now begin to create a profile for you.": "profile_initiation.mp3",
     "Oh, you don't have a profile? Let's get one setup for you!": "no_profile.mp3",
-    "During this session, facial features are collected for facial recognition purposes, while demographic data such as name and age are utilized to personalize the experience. All collected data will be encrypted and stored securely. It is important to note that the collected data will only be retained for a maximum of one hour and will be automatically deleted thereafter to ensure privacy and data security. Additionally, it's essential to clarify that ChatGPT is utilized for generating responses, and the user's voice is sent to OpenAI (a third-party provider) for the purpose of speech-to-text (STT) conversion. It's worth mentioning that for both STT and text-to-speech (TTS) functionalities, there is zero data retention. OpenAI's policy states that data sent for STT and TTS purposes is processed only and not retained beyond the duration of the session. This ensures that user privacy is maintained, and no inputs are stored in these processes.":
-    "data_usage_and_privacy_statement.mp3",
-    "During this session, we'll capture and analyze your facial features to personalize your experience. Would you like to know more?":
+    ("This statement outlines the data privacy and security protocols employed during this session. "
+     "Facial features are collected for the purpose of facial recognition, and demographic information "
+     "such as name and age are used to personalize the user experience. All data collected is encrypted "
+     "and securely stored. Importantly, this data is retained for a maximum duration of one hour before "
+     "being automatically deleted, thereby ensuring the privacy and security of user information. "
+     "Furthermore, it's important to understand that during this session, your voice data will be sent to OpenAI, "
+     "a third-party provider, for speech-to-text (speech recognition) conversion. OpenAI processes this data solely "
+     "for transcription purposes and returns the transcription result, adhering to a strict zero data retention policy "
+     "with its Whisper transcription service. This ensures that your privacy is upheld and no voice inputs are stored."):"data_usage_and_privacy_statement.mp3",  
+    "During this session, we'll capture and analyze your facial features and demographic data to personalize your experience. Would you like to listen to our full data handling statement?":
     "brief_data_statement.mp3",
     "I couldn't understand the name, please try again.":"unclear_name_error.mp3",
     "Sorry I couldn't make out your age, could you please say it again?.": "unclear_age_error.mp3",
@@ -355,7 +362,7 @@ def process_audio_data(audio_input_queue):
         except Exception as e:
             print(f"Error in audio processing: {e}")
         finally:
-            clear_queue(audio_input_queue)
+            #clear_queue(audio_input_queue)
             conversation_running = False
 
 def get_user_name(prompt_key="Please say your name.", attempt_limit=3, timeout=10):
@@ -469,34 +476,49 @@ def get_user_input_with_retries(prompt_key, attempt_limit=3, timeout=10):
             listening_enabled = True
         start_time = time.time()  # Record the start time for each attempt
         try:
-            # Play the prompt from a pre-recorded file
+            # Play the prompt from a pre-recorded file or using TTS
             play_audio(prompt_key)
-            while time.time() - start_time < timeout:  # Check elapsed time
+            while True:  # Loop until a valid response or timeout
+                elapsed_time = time.time() - start_time
+                if elapsed_time >= timeout:
+                    play_audio("Sorry, I couldn't hear anything.")
+                    break
                 try:
-                    response = audio_input_queue.get(timeout=timeout)
-                    print(response)
-                    return response
+                    response = audio_input_queue.get(timeout=timeout - elapsed_time)
+                    #clear_queue(audio_input_queue)
+                    if response:
+                        print(response)
+                        return response
                 except queue.Empty:
-                    play_audio("I didn't catch that. Let's try again.")
-            # If timeout is reached without a response
-            play_audio("Sorry, I couldn't hear anything.")
+                    continue  # Continue waiting until the timeout is fully elapsed
         except Exception as e:
-            attempts += 1
-            play_audio("An error occurred. Let's try again.")
-            if attempts >= attempt_limit:
-                play_audio("Sorry, I couldn't process your input after several attempts.")
+            print(f"An error occurred: {e}")
+        attempts += 1
+        if attempts < attempt_limit:
+            play_audio("I didn't catch that. Let's try again.")
+        else:
+            play_audio("Sorry, I couldn't process your input after several attempts.")
+            break
     listening_enabled = False
     return None
 
 def get_user_consent_for_profiling():
     # Brief explanation of the session's purpose
-    brief_explanation = "During this session, we'll capture and analyze your facial features to personalize your experience. Would you like to know more?"
+    brief_explanation =  "During this session, we'll capture and analyze your facial features and demographic data to personalize your experience. Would you like to listen to our full data handling statement?"
     consent_response = get_user_input_with_retries(brief_explanation)
     
-    # Ask if the user would like more details
+    # Provide more details to the user
     if "yes" in consent_response.lower():
-        play_audio("During this session, facial features are collected for facial recognition purposes, while demographic data such as name and age are utilized to personalize the experience. All collected data will be encrypted and stored securely. It is important to note that the collected data will only be retained for a maximum of one hour and will be automatically deleted thereafter to ensure privacy and data security. Additionally, it's essential to clarify that ChatGPT is utilized for generating responses, and the user's voice is sent to OpenAI (a third-party provider) for the purpose of speech-to-text (STT) conversion. It's worth mentioning that for both STT and text-to-speech (TTS) functionalities, there is zero data retention. OpenAI's policy states that data sent for STT and TTS purposes is processed only and not retained beyond the duration of the session. This ensures that user privacy is maintained, and no inputs are stored in these processes.")
-    
+        play_audio("This statement outlines the data privacy and security protocols employed during this session. "
+                   "Facial features are collected for the purpose of facial recognition, and demographic information "
+                   "such as name and age are used to personalize the user experience. All data collected is encrypted "
+                   "and securely stored. Importantly, this data is retained for a maximum duration of one hour before "
+                   "being automatically deleted, thereby ensuring the privacy and security of user information. "
+                   "Furthermore, it's important to understand that during this session, your voice data will be sent to OpenAI, "
+                   "a third-party provider, for speech-to-text (speech recognition) conversion. OpenAI processes this data solely "
+                   "for transcription purposes and returns the transcription result, adhering to a strict zero data retention policy "
+                   "with its Whisper transcription service. This ensures that your privacy is upheld and no voice inputs are stored.")
+
     consent_response = get_user_input_with_retries("Do you consent to have your facial features captured and analyzed for this session? Please say 'yes' or 'no'.")
     print("Consent response.lower(): ", consent_response.lower())
     if "yes" in consent_response.lower():
@@ -508,6 +530,7 @@ def get_user_consent_for_profiling():
         logging.info("User consent has not been given.")
         return False
         
+
 def get_user_consent_for_recognition_attempt():
     consent_response = get_user_input_with_retries("Have you previously attended this session, provided consent and registered a profile?")
     #print("Consent response.lower(): ", consent_response.lower())
@@ -800,9 +823,9 @@ def check_profile_state():
         logging.info("User confirmed not having a profile.")
         print("User confirmed not having a profile.")
 
-def clear_queue(queue):
+'''def clear_queue(queue):
     with queue.mutex:
-        queue.queue.clear()
+        queue.queue.clear()'''
 
 def main():
     mp_face_detection, stop_event, face_detected_event, profile_mode_event, speech_processing_queue = initialize_components()
@@ -857,7 +880,7 @@ def main():
 
                             if does_not_have_profile_event.is_set():
                                 print("Starting profiling mode.")
-                                clear_queue(frame_queue)
+                                #clear_queue(frame_queue)
                                 profile_thread = threading.Thread(target=start_profiling_thread, args=(conn, cap, face_detection, frame_queue))
                                 profile_thread.start()
                                 check_profile_thread.join()
@@ -865,7 +888,7 @@ def main():
 
                             if has_profile_event.is_set():
                                 returning_user_event.set()
-                                clear_queue(recognition_frame_queue)
+                                #clear_queue(recognition_frame_queue)
 
                                 print("Attempting Recognition.")
                                 recognition_thread = threading.Thread(target=attempt_recognition, args=(cap, face_detection, frame_rgb, face_detected_event, conn, profile_mode_event))
@@ -896,7 +919,7 @@ def main():
                                 if not conversation_running:
                                     conversation_running = True
                                 print("Recognition Successful.")
-                                clear_queue(audio_input_queue)
+                                #clear_queue(audio_input_queue)
                                 #recognition_thread.join()
                                 modeText = "State: Conversation"
                                 conversation_thread = threading.Thread(target=process_audio_data, args=(audio_input_queue,))
@@ -914,7 +937,7 @@ def main():
                             
                             if conversation_ended_event.is_set():
                                 print("---CONVO ENDED EVENT SET---")
-                                clear_queue(audio_input_queue)
+                                #clear_queue(audio_input_queue)
                                 listening_enabled = False
                                 modeText = "State: Idle"
                                 conversation_thread.join()
