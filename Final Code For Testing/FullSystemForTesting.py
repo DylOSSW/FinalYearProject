@@ -51,6 +51,10 @@ recognition_frame_queue = queue.Queue()
 conversation_thread = None
 recognition_thread = None
 
+no_detection_counter = 0
+NO_DETECTION_THRESHOLD = 10  # Number of consecutive frames with no detection before taking action
+
+
 stop_event = threading.Event()
 face_detected_event = threading.Event()             # Face Detected Event: Triggers when the system detects a face.
 has_profile_event = threading.Event()               # Has Profile Event: User indicates they have a profile.
@@ -631,7 +635,7 @@ def find_closest_embedding(captured_embedding, embeddings, threshold=0.6):
 
 def attempt_recognition(cap, face_detection, frame_rgb, face_detected_event, conn, profile_mode_event):
     recognition_count = 0  # Variable to count successful recognitions
-    retry_max = 3
+    retry_max = 10
     match_threshold = 3
     retry_counter = 0
     #Count positive matches
@@ -813,7 +817,7 @@ def main():
     conn = create_connection(db_file)
     speech_thread = threading.Thread(target=live_speech_to_text, args=(audio_input_queue,))
     speech_thread.start()
-    global modeText, listening_enabled, conversation_thread,recognition_thread,conversation, conversation_initial_setup, conversation_running
+    global modeText, listening_enabled, conversation_thread,recognition_thread,conversation, conversation_initial_setup, conversation_running, no_detection_counter,NO_DETECTION_THRESHOLD
     if conn:
         create_tables(conn)
         cap = cv2.VideoCapture(0)
@@ -831,6 +835,7 @@ def main():
                         developer_frame = frame.copy()
 
                         if results.detections:
+                            no_detection_counter = 0
                             if face_detected_time is None:
                                 face_detected_time = time.time()  # Start the timer on the first detection
                                                     # Example of getting operational info
@@ -942,23 +947,29 @@ def main():
                             # Drawing bounding boxes and other UI updates here...
 
                         else:
-                            #face_detected_event.clear()  # Allow new face detection
-                            face_detected_time = None  # Reset the timer if no face is detected
-                            #if conversation_thread and conversation_thread.is_alive():
-                            #        #conversation_ended_event.set()
-                            #        print("Convo alive, face not detected")
-                            #        listening_enabled = False
-                            #        audio_input_queue.put(None)
-                            #        print("---CONVO ALSO ON : ENDING---")
-                            #        conversation_thread.join()
-                            #        conversation_thread = None
-                            if recognition_thread and recognition_thread.is_alive():
-                                recognition_failure_event.set()
-                                print("recog alive face not detected")
-                                #recognition_failure_event.set()
-                                #recognition_thread.join() # Stop recognition - Assuming user leaves after exiting conversation
-                                #conversation = conversation_initial_setup.copy()
-                            
+                            no_detection_counter += 1
+                            print(f"No detection counter: {no_detection_counter}")
+                            if no_detection_counter >= NO_DETECTION_THRESHOLD:
+                                print("No detection threshold reached - Resetting")
+
+                                #face_detected_event.clear()  # Allow new face detection
+                                face_detected_time = None  # Reset the timer if no face is detected
+                                #if conversation_thread and conversation_thread.is_alive():
+                                #        #conversation_ended_event.set()
+                                #        print("Convo alive, face not detected")
+                                #        listening_enabled = False
+                                #        audio_input_queue.put(None)
+                                #        print("---CONVO ALSO ON : ENDING---")
+                                #        conversation_thread.join()
+                                #        conversation_thread = None
+                                if recognition_thread and recognition_thread.is_alive():
+                                    recognition_failure_event.set()
+                                    print("recog alive face not detected")
+                                    #recognition_failure_event.set()
+                                    #recognition_thread.join() # Stop recognition - Assuming user leaves after exiting conversation
+                                    #conversation = conversation_initial_setup.copy()
+                                no_detection_counter = 0
+                                
                             
 
 
