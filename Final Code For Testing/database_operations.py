@@ -1,26 +1,30 @@
+"""
+This module provides functions to synthesize speech from text using the OpenAI
+Text-to-Speech (TTS) API and save the audio files. It includes functionality to
+load the API key, clean text for filenames, and map key phrases to audio file names.
+"""
+
 # Student Names:   Dylan Holmwood and Kristers Martukans
 # Student Numbers: D21124331 and D21124318
 # Date:            21st May 2024
 # Module Title:    Final Year Project
 # Module Code:     PROJ4004
-# Supervisors:     Paula Kelly and Damon Berry 
+# Supervisors:     Paula Kelly and Damon Berry
 # Script Name:     MainSystem.py
 # Description:     This file serves as the.....
 
 import sqlite3
-
-from cryptography.fernet import Fernet
-from datetime import datetime, timedelta
 import time
 import os
 import logging
+from datetime import datetime, timedelta
+from cryptography.fernet import Fernet
 import numpy as np
 
 # Function to load encryption key from file
 def load_encryption_key():
     with open('config.key', 'rb') as key_file:
         key = key_file.read()
-        print(key)  # Print the loaded key (for debugging)
     # Create a Fernet object with the loaded key
     return Fernet(key)
 
@@ -34,14 +38,18 @@ def create_connection(db_file):
     try:
         # Attempt to connect to the SQLite database file
         conn = sqlite3.connect(db_file, check_same_thread=False)
+        conn.execute('PRAGMA foreign_keys = ON;')  # Enable foreign key constraints
         print("SQLite version:", sqlite3.version)  # Print SQLite version (for debugging)
     except Exception as e:
         print(e)  # Print any errors that occur during connection (for debugging)
     return conn
 
-# Function to create database tables
+
 def create_tables(conn):
     """Create tables as per the updated schema."""
+    # Enable foreign key constraints
+    conn.execute('PRAGMA foreign_keys = ON;')
+
     # SQL statements to create user_profiles and facial_embeddings tables
     user_profiles_table_sql = '''
     CREATE TABLE IF NOT EXISTS user_profiles (
@@ -57,7 +65,7 @@ def create_tables(conn):
         user_id INTEGER,
         embedding BLOB NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-        FOREIGN KEY (user_id) REFERENCES user_profiles (id)
+        FOREIGN KEY (user_id) REFERENCES user_profiles (id) ON DELETE CASCADE
     );'''
 
     c = conn.cursor()  # Get cursor for executing SQL statements
@@ -67,51 +75,30 @@ def create_tables(conn):
     conn.commit()  # Commit the transaction (save changes to the database)
 
 
-'''# Function to insert user profile into the database
+
 def insert_user_profile(conn, name="Anonymous", age=None):
     """Insert a user profile into the database with name and age."""
     try:
-
-        sql = 'INSERT INTO user_profiles (name, age) VALUES (?, ?)'  # SQL statement
-        cur = conn.cursor()  # Get cursor for executing SQL statements
-        # Execute SQL statement to insert user profile
-        cur.execute(sql, (name, age))
-        conn.commit()  # Commit the transaction
-        return cur.lastrowid  # Return the last inserted row ID
-    except Exception as e:
-        print(f"Error inserting data: {e}")  # Print any errors (for debugging)
-
-# Function to insert facial embedding into the database
-def insert_embeddings(conn, user_id, embedding):
-    """Insert facial embedding into the database."""
-    try:
-        # Convert the embedding tensor to a NumPy array and then to bytes
-        embedding_bytes = embedding.tobytes()
-        sql = "INSERT INTO facial_embeddings (user_id, embedding) VALUES (?, ?)"  # SQL statement
-        cur = conn.cursor()  # Get cursor for executing SQL statements
-        # Execute SQL statement to insert facial embedding
-        cur.execute(sql, (user_id, embedding_bytes))
-        conn.commit()  # Commit the transaction
-    except Exception as e:
-        print(f"Error inserting embedding: {e}")  # Print any errors (for debugging)'''
-
-# Function to insert user profile into the database
-def insert_user_profile(conn, name="Anonymous", age=None):
-    """Insert a user profile into the database with name and age."""
-    try:
+        # Ensure age is converted to a string before encoding and encrypting
+        age_str = str(age) if age is not None else "Unknown"
+        
         # Encrypt sensitive data before insertion
-        print(name)  # Print the name (for debugging)
-        encrypted_name = cipher_suite.encrypt(name.encode())  # Encrypt name
-        print(encrypted_name)  # Print encrypted name (for debugging)
-        encrypted_age = cipher_suite.encrypt(age.encode())  # Encrypt age
+        encrypted_name = cipher_suite.encrypt(name.encode())         # Encrypt name
+        encrypted_age = cipher_suite.encrypt(age_str.encode())       # Encrypt age
+        
         sql = 'INSERT INTO user_profiles (name, age) VALUES (?, ?)'  # SQL statement
-        cur = conn.cursor()  # Get cursor for executing SQL statements
+        
+        # Get cursor for executing SQL statements
+        cur = conn.cursor()                 
+
         # Execute SQL statement to insert user profile
         cur.execute(sql, (encrypted_name, encrypted_age))
-        conn.commit()  # Commit the transaction
-        return cur.lastrowid  # Return the last inserted row ID
+        conn.commit()                                                # Commit the transaction
+        return cur.lastrowid                                         # Return the last inserted row ID
     except Exception as e:
-        print(f"Error inserting data: {e}")  # Print any errors (for debugging)
+        print(f"Error inserting data: {e}")
+
+    
 
 # Function to insert facial embedding into the database
 def insert_embeddings(conn, user_id, embedding):
@@ -125,33 +112,12 @@ def insert_embeddings(conn, user_id, embedding):
 
         sql = "INSERT INTO facial_embeddings (user_id, embedding) VALUES (?, ?)"  # SQL statement
         cur = conn.cursor()  # Get cursor for executing SQL statements
+        
         # Execute SQL statement to insert facial embedding
         cur.execute(sql, (user_id, encrypted_embedding_bytes))
         conn.commit()  # Commit the transaction
     except Exception as e:
         print(f"Error inserting embedding: {e}")  # Print any errors (for debugging)
-
-'''def get_all_embeddings(conn):
-    """Retrieve all user embeddings from the database."""
-    logging.info("Retrieving all user embeddings from the database.")
-
-    embeddings = []
-    user_ids = []
-    sql = "SELECT user_id, embedding FROM facial_embeddings"
-    cur = conn.cursor()
-    cur.execute(sql)
-    rows = cur.fetchall()
-    
-    for row in rows:
-        user_id = row[0]
-        user_ids.append(user_id)
-        embedding_bytes = row[1]
-        embedding = np.frombuffer(embedding_bytes, dtype=np.float32)
-        embeddings.append(embedding)
-
-    logging.info(f"Retrieved {len(embeddings)} embeddings for {len(user_ids)} users.")
-    return user_ids, embeddings'''
-
 
 def get_all_embeddings(conn):
     """Retrieve and decrypt all user embeddings from the database."""
@@ -181,21 +147,6 @@ def get_all_embeddings(conn):
     logging.info(f"Retrieved and decrypted {len(embeddings)} embeddings for {len(user_ids)} users.")
     return user_ids, embeddings
 
-'''def get_returning_user_name(conn, user_id):
-    logging.info(f"Retrieving name for user ID: {user_id}")
-
-    sql = "SELECT name FROM user_profiles WHERE id = ?"
-    cur = conn.cursor()
-    cur.execute(sql, (user_id,))
-    result = cur.fetchone()
-
-    if result:
-        logging.info("User name retrieved successfully.")
-        return result[0]
-    else:
-        logging.warning("User name not found for the given user ID.")
-        return None'''
-
 def get_returning_user_name(conn, user_id):
     logging.info(f"Retrieving name for user ID: {user_id}")
 
@@ -219,38 +170,33 @@ def get_returning_user_name(conn, user_id):
         return None
 
 def delete_old_records(conn):
-    """Delete user profiles and their associated facial embeddings older than a certain date."""
+    """Delete user profiles older than a certain date and automatically delete associated facial embeddings."""
     try:
         while True:
             cur = conn.cursor()
-            # Define the time threshold, here we delete records older than 30 days for demonstration
-            time_threshold = datetime.now() - timedelta(minutes=3)
-            
+
+            # Define the time threshold, e.g., delete records older than 3 minutes for testing
+            time_threshold = datetime.now() - timedelta(minutes=2)
+
             # Convert the time threshold to a string in the format SQLite understands
             time_threshold_str = time_threshold.strftime('%Y-%m-%d %H:%M:%S')
 
-            # First, delete facial embeddings associated with user profiles that are going to be deleted
-            delete_embeddings_sql = """
-                DELETE FROM facial_embeddings 
-                WHERE user_id IN (
-                    SELECT id FROM user_profiles WHERE created_at < ?
-                )
-            """
-            cur.execute(delete_embeddings_sql, (time_threshold_str,))
+            logging.info(f"Attempting to delete records older than {time_threshold_str}")
 
-            # Then, delete the user profiles older than the time threshold
+            # Delete user profiles older than the time threshold
             delete_profiles_sql = "DELETE FROM user_profiles WHERE created_at < ?"
             cur.execute(delete_profiles_sql, (time_threshold_str,))
-            
+
+            # Commit the transaction
             conn.commit()
-            print(f"Old records deleted at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-            logging.info(f"Old records deleted at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-            
-            
-            # Sleep for a set amount of time before checking again, e.g., 1 day (86400 seconds)
-            time.sleep(40)
+            deleted_rows = cur.rowcount  # Number of rows deleted
+            logging.info(f"{deleted_rows} old records deleted at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"{deleted_rows} old records deleted at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+            # Sleep for a set amount of time before checking again (e.g., 1 minute)
+            time.sleep(300)
     except Exception as e:
-        print(f"Error in record deletion thread: {e}")
+        logging.error(f"Error in record deletion thread: {e}")
 
 
 def delete_database_on_exit(db_path):

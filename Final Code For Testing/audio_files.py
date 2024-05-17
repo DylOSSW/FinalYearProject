@@ -27,9 +27,16 @@ audio_files = {
     "Have you previously attended this session, provided consent and registered a profile?": "previous_consent.mp3",
     "Okay, so I will now begin to create a profile for you.": "profile_initiation.mp3",
     "Oh, you don't have a profile? Let's get one setup for you!": "no_profile.mp3",
-    "During this session, facial features are collected for facial recognition purposes, while demographic data such as name and age are utilized to personalize the experience. All collected data will be encrypted and stored securely. It is important to note that the collected data will only be retained for a maximum of one hour and will be automatically deleted thereafter to ensure privacy and data security. Additionally, it's essential to clarify that ChatGPT is utilized for generating responses, and the user's voice is sent to OpenAI (a third-party provider) for the purpose of speech-to-text (STT) conversion. It's worth mentioning that for both STT and text-to-speech (TTS) functionalities, there is zero data retention. OpenAI's policy states that data sent for STT and TTS purposes is processed only and not retained beyond the duration of the session. This ensures that user privacy is maintained, and no inputs are stored in these processes.":
-    "data_usage_and_privacy_statement.mp3",
-    "During this session, we'll capture and analyze your facial features to personalize your experience. Would you like to know more?":
+    ("This statement outlines the data privacy and security protocols employed during this session. "
+     "Facial features are collected for the purpose of facial recognition, and demographic information "
+     "such as name and age are used to personalize the user experience. All data collected is encrypted "
+     "and securely stored. Importantly, this data is retained for a maximum duration of one hour before "
+     "being automatically deleted, thereby ensuring the privacy and security of user information. "
+     "Furthermore, it's important to understand that during this session, your voice data will be sent to OpenAI, "
+     "a third-party provider, for speech-to-text (speech recognition) conversion. OpenAI processes this data solely "
+     "for transcription purposes and returns the transcription result, adhering to a strict zero data retention policy "
+     "with its Whisper transcription service. This ensures that your privacy is upheld and no voice inputs are stored."):"data_usage_and_privacy_statement.mp3",  
+    "During this session, we'll capture and analyze your facial features and demographic data to personalize your experience. Would you like to listen to our full data handling statement?":
     "brief_data_statement.mp3",
     "I couldn't understand the name, please try again.":"unclear_name_error.mp3",
     "Sorry I couldn't make out your age, could you please say it again?.": "unclear_age_error.mp3",
