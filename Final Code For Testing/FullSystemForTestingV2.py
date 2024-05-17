@@ -116,9 +116,7 @@ def play_response(audio_file_path, retries = 3, delay = 2):
                 break
             except Exception as e:
                 print(f"Error playing audio file {audio_file_path}: {e}")
-                time.sleep(delay)  # Delay before retrying
-    
-    #time.sleep(1)
+                time.sleep(delay)  # Delay before retrying    
     listening_enabled = True
 
 
@@ -432,7 +430,7 @@ def get_user_consent_for_profiling():
         
 def get_user_consent_for_recognition_attempt():
     consent_response = get_user_input_with_retries("Have you previously attended this session, provided consent and registered a profile?")
-    print("Consent response.lower(): ", consent_response.lower())
+    #print("Consent response.lower(): ", consent_response.lower())
     if "yes" in consent_response.lower():
         play_audio("Thank you for your consent.")
         logging.info("User consent received.")
@@ -763,11 +761,11 @@ def main():
 
                             if recognition_failure_event.is_set():
                                 listening_enabled = False
-                                audio_input_queue.put(None)
                                 print("---RECOGNITION FAILURE EVENT IS SET---")
                                 recognition_thread.join()
                                 print("---RECOG THREAD JOINED---")
                                 if conversation_thread and conversation_thread.is_alive():
+                                    audio_input_queue.put(None)
                                     print("---CONVO ALSO ON : ENDING---")
                                     conversation_thread.join()
                                     conversation_thread = None

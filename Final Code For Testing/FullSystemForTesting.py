@@ -197,7 +197,7 @@ def play_response(audio_file_path, retries = 3, delay = 2):
                 time.sleep(delay)  # Delay before retrying
     
     #time.sleep(1)
-    listening_enabled = True
+    #listening_enabled = True
 
 
 def play_audio(message_key, name=None, retries=3, delay=2):
@@ -333,6 +333,7 @@ def process_audio_data(audio_input_queue):
             text = audio_input_queue.get()
             if text == None:
                 print("Exiting Conversation Loop")
+                clear_queue(audio_input_queue)
                 break
             print("Text from audio queue: ", text)
             response_from_gpt = chat_with_gpt(text)
@@ -343,6 +344,7 @@ def process_audio_data(audio_input_queue):
                 play_response(audio_file_path)
                 #playsound(None)  # Close the audio player
                 os.remove(audio_file_path)  # Remove the temporary audio file
+                #listening_enabled = True
             else:
                 print("Error: Audio file path is None")
             listening_enabled = True
@@ -475,6 +477,7 @@ def get_user_input_with_retries(prompt_key, attempt_limit=3, timeout=10):
                 try:
                     response = audio_input_queue.get(timeout=timeout)
                     print(response)
+                    listening_enabled = False
                     return response
                 except queue.Empty:
                     play_audio("I didn't catch that. Let's try again.")
@@ -496,7 +499,7 @@ def get_user_consent_for_profiling():
     # Ask if the user would like more details
     if "yes" in consent_response.lower():
         play_audio("During this session, facial features are collected for facial recognition purposes, while demographic data such as name and age are utilized to personalize the experience. All collected data will be encrypted and stored securely. It is important to note that the collected data will only be retained for a maximum of one hour and will be automatically deleted thereafter to ensure privacy and data security. Additionally, it's essential to clarify that ChatGPT is utilized for generating responses, and the user's voice is sent to OpenAI (a third-party provider) for the purpose of speech-to-text (STT) conversion. It's worth mentioning that for both STT and text-to-speech (TTS) functionalities, there is zero data retention. OpenAI's policy states that data sent for STT and TTS purposes is processed only and not retained beyond the duration of the session. This ensures that user privacy is maintained, and no inputs are stored in these processes.")
-    
+
     consent_response = get_user_input_with_retries("Do you consent to have your facial features captured and analyzed for this session? Please say 'yes' or 'no'.")
     print("Consent response.lower(): ", consent_response.lower())
     if "yes" in consent_response.lower():
@@ -599,7 +602,7 @@ def get_returning_user_name(conn, user_id):
         logging.warning("User name not found for the given user ID.")
         return None
 
-def find_closest_embedding(captured_embedding, embeddings, threshold=0.9):
+def find_closest_embedding(captured_embedding, embeddings, threshold=0.6):
     """
     Find the closest embedding in the database to the captured one, with a threshold for matching.
     """
@@ -874,15 +877,17 @@ def main():
                                 has_profile_event.clear()  # Reset after starting profiling
 
                             if recognition_failure_event.is_set():
-                                listening_enabled = False
-                                audio_input_queue.put(None)
-                                print("---RECOGNITION FAILURE EVENT IS SET---")
-                                recognition_thread.join()
-                                print("---RECOG THREAD JOINED---")
+                                if recognition_thread and recognition_thread.is_alive():
+                                    print("---RECOGNITION FAILURE EVENT IS SET---")
+                                    recognition_thread.join()
+                                    print("---RECOG THREAD JOINED---")
                                 if conversation_thread and conversation_thread.is_alive():
+                                    listening_enabled = False
+                                    audio_input_queue.put(None)
                                     print("---CONVO ALSO ON : ENDING---")
                                     conversation_thread.join()
                                     conversation_thread = None
+                                    conversation = conversation_initial_setup.copy()
                                     #conversation_ended_event.set()
                                 
                                 #clear_queue(frame_queue)
@@ -913,12 +918,12 @@ def main():
 
                             
                             if conversation_ended_event.is_set():
-                                print("---CONVO ENDED EVENT SET---")
-                                clear_queue(audio_input_queue)
-                                listening_enabled = False
-                                modeText = "State: Idle"
-                                conversation_thread.join()
-                                conversation_thread = None
+                                if conversation_thread and conversation_thread.is_alive():
+                                    print("---CONVO ENDED EVENT SET---")
+                                    listening_enabled = False
+                                    modeText = "State: Idle"
+                                    conversation_thread.join()
+                                    conversation_thread = None
                                 if recognition_thread and recognition_thread.is_alive():
                                     #recognition_failure_event.set()
                                     recognition_thread.join() # Stop recognition - Assuming user leaves after exiting conversation
@@ -939,20 +944,20 @@ def main():
                         else:
                             #face_detected_event.clear()  # Allow new face detection
                             face_detected_time = None  # Reset the timer if no face is detected
-                            if conversation_thread and conversation_thread.is_alive():
-                                    conversation_ended_event.set()
-                                    print("Convo alive, face not detected")
-                                    listening_enabled = False
-                                    audio_input_queue.put(None)
-                                    print("---CONVO ALSO ON : ENDING---")
-                                    conversation_thread.join()
-                                    conversation_thread = None
+                            #if conversation_thread and conversation_thread.is_alive():
+                            #        #conversation_ended_event.set()
+                            #        print("Convo alive, face not detected")
+                            #        listening_enabled = False
+                            #        audio_input_queue.put(None)
+                            #        print("---CONVO ALSO ON : ENDING---")
+                            #        conversation_thread.join()
+                            #        conversation_thread = None
                             if recognition_thread and recognition_thread.is_alive():
                                 recognition_failure_event.set()
                                 print("recog alive face not detected")
                                 #recognition_failure_event.set()
-                                recognition_thread.join() # Stop recognition - Assuming user leaves after exiting conversation
-                                conversation = conversation_initial_setup.copy()
+                                #recognition_thread.join() # Stop recognition - Assuming user leaves after exiting conversation
+                                #conversation = conversation_initial_setup.copy()
                             
                             
 
