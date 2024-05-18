@@ -571,7 +571,7 @@ def capture_for_duration(duration):
     start_time = time.time()
     while time.time() - start_time < duration:
         time.sleep(0.01)  # Makes the loop wait for 10ms
-def find_closest_embedding(captured_embedding, embeddings, threshold=0.9):
+def find_closest_embedding(captured_embedding, embeddings, threshold=0.6):
     """
     Find the closest embedding in the database to the captured one, with a threshold for matching.
     """
@@ -934,7 +934,7 @@ def main():
                                     recognition_failure_event.set()
                                     print("recog alive face not detected")
                                 no_detection_counter = 0
-                                
+
                         cv2.imshow('User View', display_frame)
                         display_operational_stats(cap, frame, start_time)
                         if cv2.waitKey(1) & 0xFF == ord('q'):
