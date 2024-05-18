@@ -27,10 +27,13 @@ logging.basicConfig(
 
 # Define system states and initialization
 modeText = "State: Idle"                        # Initial state of the application
+display_info_default = {"Name": "Unknown"} # Default display info
+display_info = display_info_default.copy()
 
 # Initialize queues for managing data flow
 frame_queue = queue.Queue()                     # Queue for raw frames from camera
 recognition_frame_queue = queue.Queue()         # Queue for frames to be processed for recognition
+display_info_queue = queue.Queue()
 
 # Define threading events for process control
 stop_event = threading.Event()                  # Event to signal stopping all threads
@@ -639,6 +642,7 @@ def attempt_recognition(face_detection, conn):
                         if returning_user_event.is_set():
                             
                             existing_user_name = get_returning_user_name(conn, user_id)
+                            display_info_queue.put(existing_user_name)
                             returning_user_remark = f"It's me, {existing_user_name}."
                             print(returning_user_remark)
                             returning_user_greeting = chat_with_gpt(returning_user_remark)
@@ -678,6 +682,7 @@ def attempt_recognition(face_detection, conn):
                             retry_max = 10                      
 
                             print("User not recognized. Switching to profiling mode.")
+                            display_info_queue.put("Unknown")
                             recognition_running_event.clear()
                             recognition_failure_event.set()      # Recognition Failure Event: User is not recognized.
                             
@@ -789,11 +794,11 @@ def main():
     conn = create_connection(db_file)
     speech_thread = threading.Thread(target=live_speech_to_text, args=(audio_input_queue,))
     # Start a thread to periodically delete old records
-    deletion_thread = threading.Thread(target=delete_old_records, args=(conn,))
-    deletion_thread.daemon = True  # Set the thread as a daemon thread
-    deletion_thread.start()
+    #deletion_thread = threading.Thread(target=delete_old_records, args=(conn,))
+    #deletion_thread.daemon = True  # Set the thread as a daemon thread
+    #deletion_thread.start()
     speech_thread.start()
-    global modeText, listening_enabled, conversation_thread, conversation, conversation_initial_setup, conversation_running
+    global modeText, listening_enabled, conversation_thread, conversation, conversation_initial_setup, conversation_running, display_info, display_info_default
     no_detection_counter = 0 # Number of consecutive failed detections
     NO_DETECTION_THRESHOLD = 10  # Number of consecutive frames with no detection before taking action
 
@@ -810,7 +815,7 @@ def main():
                         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                         results = face_detection.process(frame_rgb)
                         display_frame = frame.copy()
-                        developer_frame = frame.copy()
+                        #developer_frame = frame.copy()
 
                         if results.detections:
                             if face_detected_time is None:
@@ -822,10 +827,15 @@ def main():
                                     ih, iw, _ = frame.shape
                                     bbox = (int(bboxC.xmin * iw), int(bboxC.ymin * ih), int(bboxC.width * iw), int(bboxC.height * ih))
                                     cv2.rectangle(display_frame, (bbox[0], bbox[1]), (bbox[0]+bbox[2], bbox[1]+bbox[3]), (0, 0, 255), 2)
-                                    cv2.rectangle(developer_frame, (bbox[0], bbox[1]), (bbox[0]+bbox[2], bbox[1]+bbox[3]), (0, 0, 255), 2)
+                                    #cv2.rectangle(developer_frame, (bbox[0], bbox[1]), (bbox[0]+bbox[2], bbox[1]+bbox[3]), (0, 0, 255), 2)
                                 
                             cv2.putText(display_frame, modeText, (50, frame.shape[0] - 10), cv2.FONT_HERSHEY_COMPLEX, 0.6, (0, 255, 0), 1, cv2.LINE_AA)
-
+                            if not display_info_queue.empty():
+                                user_name = display_info_queue.get()
+                                display_info["Name"] = user_name
+                            display_text = f"Name: {display_info['Name']}"
+                            cv2.putText(display_frame, display_text, (50, 50), cv2.FONT_HERSHEY_COMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
+                                
 
                             if time.time() - face_detected_time >= 3:  # Check if the face has been detected continuously for 3 seconds
                                 if not face_detected_event.is_set():  # Check this only once
@@ -930,6 +940,7 @@ def main():
                             if no_detection_counter >= NO_DETECTION_THRESHOLD:
                                 print("No detection threshold reached - Resetting")
                                 face_detected_time = None  # Reset the timer if no face is detected
+                                display_info = display_info_default
                                 if recognition_thread and recognition_thread.is_alive():
                                     recognition_failure_event.set()
                                     print("recog alive face not detected")
