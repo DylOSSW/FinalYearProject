@@ -120,7 +120,7 @@ def play_response(audio_file_path, retries=3, delay=2):
             except Exception as e:
                 print(f"Error playing audio file {audio_file_path}: {e}")
                 time.sleep(delay)  # Delay before retrying    
-    listening_enabled = True
+    #listening_enabled = True
 
 def play_audio(message_key, name=None, retries=3, delay=2):
 
@@ -273,6 +273,7 @@ def process_audio_data(audio_input_queue):
             text = audio_input_queue.get()
             if text is None:  # Check if the text is None to exit loop
                 print("Exiting Conversation Loop")
+                clear_queue(audio_input_queue)
                 break
             print("Text from audio queue: ", text)
             
@@ -598,7 +599,7 @@ def find_closest_embedding(captured_embedding, embeddings, threshold=0.9):
 
 def attempt_recognition(face_detection, conn):
     recognition_count = 0  # Variable to count successful recognitions
-    retry_max = 3
+    retry_max = 10
     match_threshold = 3
     retry_counter = 0
     #Count positive matches
@@ -646,7 +647,6 @@ def attempt_recognition(face_detection, conn):
                             
                             if audio_file_path is not None:
                                 play_response(audio_file_path)
-                                #playsound(None)  # Close the audio player
                                 os.remove(audio_file_path)  # Remove the temporary audio file
                             else:
                                 print("Error: Audio file path is None")
@@ -662,13 +662,12 @@ def attempt_recognition(face_detection, conn):
                                 print("Matched Frame Indexes: ",matched_frame_indexes)
                                 print("Matched closest user indexes: ", matched_user_index)
                                 print("\n\nThree successful recognitions. Starting Conversation.")
-                                #face_detected_event.set()  # Set face detected event
                                 recognition_success_event.set()
                                 break  # Exit the loop after successful recognition
                             else:
                                 continue
                         else:
-                            print(f"{3 - recognition_count} more recognitions needed for event.")
+                            print(f"{match_threshold - num_matches} more recognitions needed for event.")
 
                     else:
                         retry_counter+=1
@@ -676,7 +675,7 @@ def attempt_recognition(face_detection, conn):
                         
                         if retry_counter == retry_max:
                             retry_counter = 0
-                            retry_max = 3                        
+                            retry_max = 10                      
 
                             print("User not recognized. Switching to profiling mode.")
                             recognition_running_event.clear()
@@ -795,6 +794,9 @@ def main():
     deletion_thread.start()
     speech_thread.start()
     global modeText, listening_enabled, conversation_thread, conversation, conversation_initial_setup, conversation_running
+    no_detection_counter = 0 # Number of consecutive failed detections
+    NO_DETECTION_THRESHOLD = 10  # Number of consecutive frames with no detection before taking action
+
     if conn:
         create_tables(conn)
         cap = cv2.VideoCapture(0)
@@ -866,11 +868,13 @@ def main():
                                     print("---CONVO ALSO ON : ENDING---")
                                     conversation_thread.join()
                                     conversation_thread = None
+                                    conversation = conversation_initial_setup.copy()
                                     #conversation_ended_event.set()
                                 
                                 #clear_queue(frame_queue)
                                 #profile_thread = threading.Thread(target=start_profiling_thread, args=(conn, cap, face_detection, frame_queue))
                                 #profile_thread.start()
+                                clear_queue(audio_input_queue)
                                 face_detected_time = None  # Reset to detect new face
                                 face_detected_event.clear()  # Allow new face detection
                                 recognition_failure_event.clear()  # Reset after starting profiling
@@ -909,6 +913,7 @@ def main():
                                 print("Conversation completed and cleared. Ready for new face detection. \
                                       Conversation contents:\n")
                                 print_conversation(conversation)
+                                clear_queue(audio_input_queue)
                                 face_detected_time = None  # Reset to detect new face
                                 face_detected_event.clear()  # Allow new face detection
                                 conversation_ended_event.clear()  # Reset profiling event
@@ -920,8 +925,16 @@ def main():
                             # Drawing bounding boxes and other UI updates here...
 
                         else:
-                            face_detected_time = None  # Reset the timer if no face is detected
-
+                            no_detection_counter += 1
+                            print(f"No detection counter: {no_detection_counter}")
+                            if no_detection_counter >= NO_DETECTION_THRESHOLD:
+                                print("No detection threshold reached - Resetting")
+                                face_detected_time = None  # Reset the timer if no face is detected
+                                if recognition_thread and recognition_thread.is_alive():
+                                    recognition_failure_event.set()
+                                    print("recog alive face not detected")
+                                no_detection_counter = 0
+                                
                         cv2.imshow('User View', display_frame)
                         display_operational_stats(cap, frame, start_time)
                         if cv2.waitKey(1) & 0xFF == ord('q'):
