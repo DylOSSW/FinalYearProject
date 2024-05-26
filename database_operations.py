@@ -1,18 +1,17 @@
-"""
-This module provides functions to synthesize speech from text using the OpenAI
-Text-to-Speech (TTS) API and save the audio files. It includes functionality to
-load the API key, clean text for filenames, and map key phrases to audio file names.
-"""
-
 # Student Names:   Dylan Holmwood and Kristers Martukans
 # Student Numbers: D21124331 and D21124318
-# Date:            21st May 2024
+# Date:            29th May 2024
 # Module Title:    Final Year Project
 # Module Code:     PROJ4004
 # Supervisors:     Paula Kelly and Damon Berry
-# Script Name:     MainSystem.py
-# Description:     This file serves as the.....
+# Script Name:     database_operations.py
+# Description:     This file handles the database operations including creating a connection, creating tables, inserting user profiles and facial embeddings, 
+#                  retrieving and decrypting embeddings, and deleting old records. The script also ensures data security 
+#                  by encrypting sensitive information before storing it in the SQLite database and decrypting it upon retrieval.
+#                  Additionally, it manages the automatic deletion of old records and database cleanup on exit.
 
+
+""" Libraries """
 import sqlite3
 import time
 import os
@@ -28,7 +27,7 @@ def load_encryption_key():
     # Create a Fernet object with the loaded key
     return Fernet(key)
 
-# Use the Fernet object for encryption
+# Use Fernet object for encryption
 cipher_suite = load_encryption_key()
 
 # Function to create a connection to the SQLite database
@@ -44,7 +43,7 @@ def create_connection(db_file):
         print(e)  # Print any errors that occur during connection (for debugging)
     return conn
 
-
+# Function to create tables in the database
 def create_tables(conn):
     """Create tables as per the updated schema."""
     # Enable foreign key constraints
@@ -75,7 +74,7 @@ def create_tables(conn):
     conn.commit()  # Commit the transaction (save changes to the database)
 
 
-
+# Function to insert a user profile into the database
 def insert_user_profile(conn, name="Anonymous", age=None):
     """Insert a user profile into the database with name and age."""
     try:
@@ -119,13 +118,14 @@ def insert_embeddings(conn, user_id, embedding):
     except Exception as e:
         print(f"Error inserting embedding: {e}")  # Print any errors (for debugging)
 
+# Function to retrieve and decrypt all user embeddings from the database
 def get_all_embeddings(conn):
     """Retrieve and decrypt all user embeddings from the database."""
     logging.info("Retrieving and decrypting all user embeddings from the database.")
     
     embeddings = []
     user_ids = []
-    sql = "SELECT user_id, embedding FROM facial_embeddings"  # Adjust if more columns are needed
+    sql = "SELECT user_id, embedding FROM facial_embeddings"  # SQL query to retrieve embeddings
     cur = conn.cursor()
     cur.execute(sql)
     rows = cur.fetchall()
@@ -147,7 +147,9 @@ def get_all_embeddings(conn):
     logging.info(f"Retrieved and decrypted {len(embeddings)} embeddings for {len(user_ids)} users.")
     return user_ids, embeddings
 
+# Function to retrieve the name of a returning user by user ID
 def get_returning_user_name(conn, user_id):
+    """Retrieve the name of a returning user by user ID."""
     logging.info(f"Retrieving name for user ID: {user_id}")
 
     sql = "SELECT name FROM user_profiles WHERE id = ?"
@@ -158,7 +160,7 @@ def get_returning_user_name(conn, user_id):
     if result:
         encrypted_name = result[0]
         try:
-            # Assuming the encrypted_name is stored in a format that needs decryption
+            # Decrypt the name
             decrypted_name = cipher_suite.decrypt(encrypted_name).decode('utf-8')  # decode from bytes to string
             logging.info("User name decrypted and retrieved successfully.")
             return decrypted_name
@@ -169,6 +171,7 @@ def get_returning_user_name(conn, user_id):
         logging.warning("User name not found for the given user ID.")
         return None
 
+# Function to delete user profiles older than a certain date
 def delete_old_records(conn):
     """Delete user profiles older than a certain date and automatically delete associated facial embeddings."""
     try:
@@ -193,12 +196,12 @@ def delete_old_records(conn):
             logging.info(f"{deleted_rows} old records deleted at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             print(f"{deleted_rows} old records deleted at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
-            # Sleep for a set amount of time before checking again (e.g., 1 minute)
+            # Sleep for a set amount of time before checking again (e.g., 6 minutes)
             time.sleep(300)
     except Exception as e:
         logging.error(f"Error in record deletion thread: {e}")
 
-
+# Function to delete the database file on exit
 def delete_database_on_exit(db_path):
     """Delete the database file."""
     if os.path.exists(db_path):

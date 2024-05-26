@@ -1,3 +1,14 @@
+# Student Names:   Dylan Holmwood and Kristers Martukans
+# Student Numbers: D21124331 and D21124318
+# Date:            29th May 2024
+# Module Title:    Final Year Project
+# Module Code:     PROJ4004
+# Supervisors:     Paula Kelly and Damon Berry
+# Script Name:     audio_files.py
+# Description:     This dictionary maps text phrases to their corresponding audio file names. These audio files are used in an application 
+#                  to provide spoken feedback and instructions to the user during the session. The keys in the dictionary are the text 
+#                  phrases, and the values are the names of the audio files that contain the spoken version of those phrases.
+
 audio_files = {
     "Hello there my name is Onyx.": "greeting_text.mp3",
     "I didn't catch that. Let's try again.": "didnt_catch_that.mp3",

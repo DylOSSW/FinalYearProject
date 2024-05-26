@@ -1,3 +1,15 @@
+# Student Names:   Dylan Holmwood and Kristers Martukans
+# Student Numbers: D21124331 and D21124318
+# Date:            29th May 2024
+# Module Title:    Final Year Project
+# Module Code:     PROJ4004
+# Supervisors:     Paula Kelly and Damon Berry
+# Script Name:     conversation_setup.py
+# Description:     This script defines the initial setup for a conversational AI system. It provides guidelines for the AI's
+#                  behavior to ensure natural, engaging, and human-like interactions with the user. The AI is instructed to 
+#                  keep responses fluid, natural, and of appropriate length to maintain an engaging conversation.
+
+# Initial setup for the conversational AI system
 conversation_initial_setup = [
     {
         "role": "system", 
