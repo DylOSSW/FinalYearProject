@@ -5,7 +5,11 @@
 # Module Code:     PROJ4004
 # Supervisors:     Paula Kelly and Damon Berry 
 # Script Name:     MainSystem.py
-# Description:     This file serves as the.....
+# Description:     The script is a Python-based facial recognition and voice command system designed 
+#                  for interactive user engagement. It includes functionalities such as voice-to-text conversion, user recognition 
+#                  through facial features, and audio feedback through text-to-speech. The application can create and retrieve user profiles, 
+#                  manage sessions based on user interactions, and maintains logs for auditing purposes. It utilizes threading to handle multiple operations 
+#                  simultaneously, such as processing speech and detecting faces, ensuring efficient management of tasks.
 
 # Import necessary modules and functions
 from import_libraries import *
@@ -27,7 +31,7 @@ logging.basicConfig(
 
 # Define system states and initialization
 modeText = "State: Idle"                        # Initial state of the application
-display_info_default = {"Name": "Unknown"} # Default display info
+display_info_default = {"Name": "Unknown"}       # Default display info
 display_info = display_info_default.copy()
 
 # Initialize queues for managing data flow
@@ -163,13 +167,13 @@ def play_audio(message_key, name=None, retries=3, delay=2):
         # Re-enable listening after audio playback or on error
         listening_enabled = True
 
-'''def bandpass_filter(data, lowcut, highcut, fs, order=5):
+def bandpass_filter(data, lowcut, highcut, fs, order=5):
     nyq = 0.5 * fs
     low = lowcut / nyq
     high = highcut / nyq
     b, a = butter(order, [low, high], btype='band')
     y = lfilter(b, a, data)
-    return y'''
+    return y
    
 def live_speech_to_text(audio_input_queue, wait_time=70):
     global ambient_detected
@@ -195,13 +199,13 @@ def live_speech_to_text(audio_input_queue, wait_time=70):
         # Convert byte data to numpy array
         audio_data = np.frombuffer(data, dtype=np.int16)
         # Filter the data
-        #filtered_data = bandpass_filter(audio_data, 300, 3400, RATE)
+        filtered_data = bandpass_filter(audio_data, 300, 3400, RATE)
 
         # Convert back to bytes
-        #data = filtered_data.astype(np.int16).tobytes()
+        data = filtered_data.astype(np.int16).tobytes()
 
         # Calculate RMS of the filtered data
-        rms = audioop.rms(audio_data, 2)
+        rms = audioop.rms(data, 2)
 
         if not ambient_detected:
             if frames_recorded < 40:
@@ -420,35 +424,6 @@ def get_user_age(prompt_key="Please tell me your age.", attempt_limit=3, timeout
     listening_enabled = False
     return None  # Return None if all attempts fail
 
-'''def get_user_input_with_retries(prompt_key, attempt_limit=3):
-    global listening_enabled
-    attempts = 0
-    while attempts < attempt_limit:
-        if not listening_enabled:
-            listening_enabled = True
-        try:
-            # Play the prompt from a pre-recorded file
-            play_audio(prompt_key)
-            try:
-                response = audio_input_queue.get()
-                
-                return response
-            except queue.Empty:
-                attempts += 1
-                play_audio("I didn't catch that. Let's try again.")
-                if attempts == 2:
-                    attempts += 1
-                    play_audio("I couldn't understand that. Let's try again.")
-                elif attempts >= attempt_limit:
-                    play_audio("Sorry, I couldn't hear anything.")
-        except Exception as e:
-            attempts += 1
-            play_audio("An error occurred. Let's try again.")
-            if attempts >= attempt_limit:
-                play_audio("Sorry, I couldn't process your input after several attempts.")
-    listening_enabled = False
-    return None'''
-
 def get_user_input_with_retries(prompt_key, attempt_limit=3, timeout=10):
     global listening_enabled
     attempts = 0
@@ -509,7 +484,7 @@ def get_user_consent_for_profiling():
     consent_response = get_user_input_with_retries(brief_explanation)
     
     # Provide more details to the user
-    if "yes" in consent_response.lower():
+    if consent_response is not None and "yes" in consent_response.lower():
         play_audio("This statement outlines the data privacy and security protocols employed during this session. "
                    "Facial features are collected for the purpose of facial recognition, and demographic information "
                    "such as name and age are used to personalize the user experience. All data collected is encrypted "
@@ -522,7 +497,7 @@ def get_user_consent_for_profiling():
 
     consent_response = get_user_input_with_retries("Do you consent to have your facial features captured and analyzed for this session? Please say 'yes' or 'no'.")
     print("Consent response.lower(): ", consent_response.lower())
-    if "yes" in consent_response.lower():
+    if consent_response is not None and "yes" in consent_response.lower():
         play_audio("Thank you for your consent.")
         logging.info("User consent received.")
         return True
@@ -531,10 +506,11 @@ def get_user_consent_for_profiling():
         logging.info("User consent has not been given.")
         return False
         
+
 def get_user_consent_for_recognition_attempt():
     consent_response = get_user_input_with_retries("Have you previously attended this session, provided consent and registered a profile?")
-    #print("Consent response.lower(): ", consent_response.lower())
-    if "yes" in consent_response.lower():
+    
+    if consent_response is not None and "yes" in consent_response.lower():
         play_audio("Thank you for your consent.")
         logging.info("User consent received.")
         return True
@@ -695,60 +671,84 @@ def attempt_recognition(face_detection, conn):
                 logging.error(f"Error processing frame for recognition: {e}")
             finally:
                 recognition_frame_queue.task_done()
-        
+
+# Processes frames from the frame queue to extract and store facial embeddings and user profile     
 def process_frames(face_detection, facenet_model, conn, user_name, user_age, frame_queue):
+
+    
+    # Insert user profile into the database
     user_id = insert_user_profile(conn, user_name, user_age)
     logging.info("Started processing frames.")
 
+    # Process each frame in the queue as long as the profile creation event is active
     while profile_created.is_set():
         if not frame_queue.empty():
-            image = frame_queue.get()
+            image = frame_queue.get()  # Retrieve the next frame from the queue
             if image is None or image.size == 0:
-                frame_queue.task_done()
+                frame_queue.task_done()  # Mark the frame as processed if it is empty or invalid
                 continue
 
+            # Convert the image to RGB color space for processing
             image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             try:
+                # Capture facial embeddings using the provided models
                 embeddings = capture_embeddings_with_mediapipe(face_detection, facenet_model, image_rgb)
                 for embedding in embeddings:
+                    # Convert the embedding to a NumPy array if it's not already
                     numpy_embedding = embedding.cpu().numpy() if isinstance(embedding, torch.Tensor) else embedding
+                    # Insert the embedding into the database for the current user
                     insert_embeddings(conn, user_id, numpy_embedding.flatten())
             except Exception as e:
-                logging.error(f"Error processing frame: {e}")
+                logging.error(f"Error processing frame: {e}") 
             finally:
-                frame_queue.task_done()
+                frame_queue.task_done()  # Mark the frame as processed in the queue
 
-    logging.info("Stopped processing frames.")
+    logging.info("Stopped processing frames.")  
 
+
+# Initiates user profiling in a separate thread after verifying consents and gathering necessary user details.
 def start_profiling_thread(conn, face_detection, frame_queue):
     global modeText
-    modeText = "State: Profiling"
+    modeText = "State: Profiling"  # Update the application's state to 'Profiling'
     logging.info("Profile State")
-    # Reset the stop event in case it was set from a previous profiling session
-    stop_event.clear()
+    stop_event.clear()  # Reset the stop event from any previous sessions
 
     try:
+        # Check for user consent before profiling
         if not get_user_consent_for_profiling():
             logging.info("Exiting Profiling due to lack of consent.")
-            return  # Skip profiling if consent is not obtained
+            return  # Exit the function if consent is not given
         
         play_audio("Okay, so I will now begin to create a profile for you.")
         
+        # Retrieve user name and age
         user_name = get_user_name()
+        if not user_name:  # Check if user name was not obtained
+            logging.info("User name not obtained, exiting profiling.")
+            play_audio("Sorry I could not make out your name, I am going to exit profiling.") 
+            return  # Exit if user name is not retrieved
+        
         user_age = get_user_age()
+        if not user_age:  # Check if user age was not obtained
+            logging.info("User age not obtained, exiting profiling.")
+            play_audio("Sorry I could not make out your age, I am going to exit profiling.")
+            return  # Exit if user age is not retrieved
 
+        # Load the facial recognition model
         logging.info("Loading facenet model.")
         facenet_model = InceptionResnetV1(pretrained='vggface2').eval()
         logging.info("Facenet model loaded successfully.")
 
+        # Start a thread to process frames and capture facial data
         logging.info("Starting processing thread.")
         processing_thread = threading.Thread(target=process_frames, args=(face_detection, facenet_model, conn, user_name, user_age, frame_queue))
         processing_thread.start()
         
-        
-        profile_created.set()
+        profile_created.set()  # Signal that the profile creation process has started
         logging.info("Profile created event set.")
         logging.info("Giving user instructions")
+        
+        # Provide instructions for capturing facial features from multiple angles
         instructions = ["I will now peform some calibration to capture your facial features from a few angles for better accuracy.",
                         "Please listen to the following instructions.",
                         "Please face forward for a few seconds.", 
@@ -757,38 +757,38 @@ def start_profiling_thread(conn, face_detection, frame_queue):
         
         for instruction in instructions:
             play_audio(instruction)
-            capture_for_duration(duration=6)
+            capture_for_duration(duration=6)  # Capture data for a fixed duration
 
-        profile_created.clear()
+        profile_created.clear()  # Clear the profile creation signal
         logging.info("Profile created event cleared.")
         play_audio("Thank you, for providing your information, your profile is now complete!")
         
-        profile_created.clear()
-        processing_thread.join()
+        processing_thread.join()  # Wait for the processing thread to finish
         logging.info("Profiling done")
         print("profiling done")
 
     finally:
-        # Notify the main thread that profiling is done
-        profile_completed_event.set()
-
+        profile_completed_event.set()  # Notify that profiling is completed
         logging.info("Profiling completed event set.")
 
+# Checks the user's profile state by asking if they have previously registered.
 def check_profile_state():
     global modeText
-    modeText = "State: Check Profile"
-    logging.info("Check Profile State")
+    modeText = "State: Check Profile"  
+    logging.info("Check Profile State")  
 
+    # Prompt user for confirmation if they have previously registered a profile
     check_profile = get_user_consent_for_recognition_attempt()
 
     if check_profile:
-        has_profile_event.set()
-        logging.info("User confirmed having a profile.")
-        print("User confirmed having a profile.")
+        has_profile_event.set()  # Set the event signaling that the user has a profile
+        logging.info("User confirmed having a profile.") 
+        print("User confirmed having a profile.") 
     else:
-        does_not_have_profile_event.set()
-        logging.info("User confirmed not having a profile.")
-        print("User confirmed not having a profile.")
+        does_not_have_profile_event.set()  # Set the event indicating no existing profile
+        logging.info("User confirmed not having a profile.")  
+        print("User confirmed not having a profile.")  
+
 
 def clear_queue(queue):
     with queue.mutex:

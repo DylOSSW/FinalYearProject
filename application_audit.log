@@ -1,0 +1,167 @@
+2024-05-27 15:16:01,477 - root - INFO - Check Profile State
+2024-05-27 15:16:11,841 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+2024-05-27 15:16:15,449 - root - INFO - User does not have a profile.
+2024-05-27 15:16:15,450 - root - INFO - User confirmed not having a profile.
+2024-05-27 15:16:15,463 - root - INFO - Profile State
+2024-05-27 15:16:30,703 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+2024-05-27 15:16:41,123 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+2024-05-27 15:16:42,888 - root - INFO - User consent received.
+2024-05-27 15:16:51,408 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+2024-05-27 15:16:51,902 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2024-05-27 15:17:00,285 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+2024-05-27 15:17:00,909 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2024-05-27 15:17:00,914 - root - INFO - User name has been received: john.
+2024-05-27 15:17:08,742 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+2024-05-27 15:17:09,407 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2024-05-27 15:17:09,424 - root - INFO - User age has been received: 36
+2024-05-27 15:17:12,068 - root - INFO - Loading facenet model.
+2024-05-27 15:17:13,027 - root - INFO - Facenet model loaded successfully.
+2024-05-27 15:17:13,027 - root - INFO - Starting processing thread.
+2024-05-27 15:17:13,029 - root - INFO - Profile created event set.
+2024-05-27 15:17:13,029 - root - INFO - Giving user instructions
+2024-05-27 15:17:13,057 - root - INFO - Started processing frames.
+2024-05-27 15:17:59,918 - root - INFO - Profile created event cleared.
+2024-05-27 15:18:00,097 - root - INFO - Stopped processing frames.
+2024-05-27 15:18:04,547 - root - INFO - Profiling done
+2024-05-27 15:18:04,548 - root - INFO - Profiling completed event set.
+2024-05-27 15:18:07,628 - root - INFO - Check Profile State
+2024-05-27 15:18:18,225 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+2024-05-27 15:18:19,964 - root - INFO - User consent received.
+2024-05-27 15:18:19,964 - root - INFO - User confirmed having a profile.
+2024-05-27 15:18:20,004 - root - INFO - Retrieving and decrypting all user embeddings from the database.
+2024-05-27 15:18:20,117 - root - INFO - Retrieved and decrypted 235 embeddings for 235 users.
+2024-05-27 15:18:21,295 - root - INFO - Recognition State
+2024-05-27 15:18:23,490 - root - INFO - Retrieving name for user ID: 2
+2024-05-27 15:18:23,491 - root - INFO - User name decrypted and retrieved successfully.
+2024-05-27 15:18:24,308 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2024-05-27 15:18:24,851 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/speech "HTTP/1.1 200 OK"
+2024-05-27 15:18:38,316 - root - INFO - No matching embedding found.
+2024-05-27 15:18:38,744 - root - INFO - No matching embedding found.
+2024-05-27 15:18:39,085 - root - INFO - No matching embedding found.
+2024-05-27 15:18:39,535 - root - INFO - No matching embedding found.
+2024-05-27 15:18:39,956 - root - INFO - No matching embedding found.
+2024-05-27 15:18:40,369 - root - INFO - No matching embedding found.
+2024-05-27 15:18:40,785 - root - INFO - No matching embedding found.
+2024-05-27 15:18:45,866 - root - INFO - No matching embedding found.
+2024-05-27 15:19:10,966 - root - INFO - No matching embedding found.
+2024-05-27 15:19:11,356 - root - INFO - No matching embedding found.
+2024-05-27 15:19:11,856 - root - INFO - No matching embedding found.
+2024-05-27 15:19:12,262 - root - INFO - No matching embedding found.
+2024-05-27 15:19:12,792 - root - INFO - No matching embedding found.
+2024-05-27 15:19:13,164 - root - INFO - No matching embedding found.
+2024-05-27 15:19:13,531 - root - INFO - No matching embedding found.
+2024-05-27 15:19:13,908 - root - INFO - No matching embedding found.
+2024-05-27 15:19:14,269 - root - INFO - No matching embedding found.
+2024-05-27 15:19:14,688 - root - INFO - No matching embedding found.
+2024-05-27 15:19:17,782 - root - INFO - Check Profile State
+2024-05-27 15:19:28,155 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+2024-05-27 15:19:31,817 - root - INFO - User does not have a profile.
+2024-05-27 15:19:31,832 - root - INFO - User confirmed not having a profile.
+2024-05-27 15:19:32,047 - root - INFO - Profile State
+2024-05-27 15:19:47,468 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+2024-05-27 15:19:58,504 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+2024-05-27 15:20:00,288 - root - INFO - User consent received.
+2024-05-27 15:20:08,753 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+2024-05-27 15:20:09,464 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2024-05-27 15:20:09,468 - root - INFO - User name has been received: bob.
+2024-05-27 15:20:16,249 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+2024-05-27 15:20:16,984 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2024-05-27 15:20:16,990 - root - INFO - User age has been received: 26
+2024-05-27 15:20:19,663 - root - INFO - Loading facenet model.
+2024-05-27 15:20:21,432 - root - INFO - Facenet model loaded successfully.
+2024-05-27 15:20:21,432 - root - INFO - Starting processing thread.
+2024-05-27 15:20:21,436 - root - INFO - Profile created event set.
+2024-05-27 15:20:21,437 - root - INFO - Giving user instructions
+2024-05-27 15:20:21,449 - root - INFO - Started processing frames.
+2024-05-27 15:21:08,485 - root - INFO - Profile created event cleared.
+2024-05-27 15:21:08,651 - root - INFO - Stopped processing frames.
+2024-05-27 15:21:13,027 - root - INFO - Profiling done
+2024-05-27 15:21:13,028 - root - INFO - Profiling completed event set.
+2024-05-27 15:21:16,093 - root - INFO - Check Profile State
+2024-05-27 15:21:25,236 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+2024-05-27 15:21:26,972 - root - INFO - User consent received.
+2024-05-27 15:21:26,972 - root - INFO - User confirmed having a profile.
+2024-05-27 15:21:27,027 - root - INFO - Retrieving and decrypting all user embeddings from the database.
+2024-05-27 15:21:27,144 - root - INFO - Retrieved and decrypted 345 embeddings for 345 users.
+2024-05-27 15:21:28,853 - root - INFO - Recognition State
+2024-05-27 15:21:30,812 - root - INFO - Retrieving name for user ID: 2
+2024-05-27 15:21:30,813 - root - INFO - User name decrypted and retrieved successfully.
+2024-05-27 15:21:31,472 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2024-05-27 15:21:32,164 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/speech "HTTP/1.1 200 OK"
+2024-05-27 15:21:39,256 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+2024-05-27 15:21:40,125 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2024-05-27 15:21:40,677 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/speech "HTTP/1.1 200 OK"
+2024-05-27 15:21:48,561 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+2024-05-27 15:21:49,567 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2024-05-27 15:21:50,118 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/speech "HTTP/1.1 200 OK"
+2024-05-27 15:21:59,922 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+2024-05-27 15:22:01,042 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2024-05-27 15:22:01,732 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/speech "HTTP/1.1 200 OK"
+2024-05-27 15:22:13,539 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+2024-05-27 15:22:14,724 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2024-05-27 15:22:15,310 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/speech "HTTP/1.1 200 OK"
+2024-05-27 15:22:31,022 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+2024-05-27 15:22:31,929 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2024-05-27 15:22:32,472 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/speech "HTTP/1.1 200 OK"
+2024-05-27 15:22:37,846 - root - INFO - Check Profile State
+2024-05-27 15:22:48,280 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+2024-05-27 15:22:50,047 - root - INFO - User consent received.
+2024-05-27 15:22:50,047 - root - INFO - User confirmed having a profile.
+2024-05-27 15:22:50,087 - root - INFO - Retrieving and decrypting all user embeddings from the database.
+2024-05-27 15:22:50,208 - root - INFO - Retrieved and decrypted 345 embeddings for 345 users.
+2024-05-27 15:22:51,486 - root - INFO - Recognition State
+2024-05-27 15:22:53,504 - root - INFO - Retrieving name for user ID: 3
+2024-05-27 15:22:53,505 - root - INFO - User name decrypted and retrieved successfully.
+2024-05-27 15:22:54,381 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2024-05-27 15:22:55,141 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/speech "HTTP/1.1 200 OK"
+2024-05-27 15:23:04,584 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+2024-05-27 15:23:05,681 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2024-05-27 15:23:06,339 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/speech "HTTP/1.1 200 OK"
+2024-05-27 15:23:11,477 - root - INFO - No matching embedding found.
+2024-05-27 15:23:12,688 - root - INFO - No matching embedding found.
+2024-05-27 15:23:13,095 - root - INFO - No matching embedding found.
+2024-05-27 15:23:13,458 - root - INFO - No matching embedding found.
+2024-05-27 15:23:13,856 - root - INFO - No matching embedding found.
+2024-05-27 15:23:14,213 - root - INFO - No matching embedding found.
+2024-05-27 15:23:15,332 - root - INFO - No matching embedding found.
+2024-05-27 15:23:17,754 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+2024-05-27 15:23:18,647 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2024-05-27 15:23:19,417 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/speech "HTTP/1.1 200 OK"
+2024-05-27 15:23:32,000 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+2024-05-27 15:23:33,030 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2024-05-27 15:23:33,618 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/speech "HTTP/1.1 200 OK"
+2024-05-27 15:23:46,692 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+2024-05-27 15:23:48,226 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2024-05-27 15:23:48,982 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/speech "HTTP/1.1 200 OK"
+2024-05-27 15:24:14,163 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+2024-05-27 15:24:15,436 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2024-05-27 15:24:16,168 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/speech "HTTP/1.1 200 OK"
+2024-05-27 15:24:26,723 - root - INFO - No matching embedding found.
+2024-05-27 15:24:27,505 - root - INFO - No matching embedding found.
+2024-05-27 15:24:27,897 - root - INFO - No matching embedding found.
+2024-05-27 15:24:36,800 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+2024-05-27 15:24:38,061 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2024-05-27 15:24:38,897 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/speech "HTTP/1.1 200 OK"
+2024-05-27 15:25:00,255 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+2024-05-27 15:25:02,392 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2024-05-27 15:25:03,049 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/speech "HTTP/1.1 200 OK"
+2024-05-27 15:25:28,823 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+2024-05-27 15:25:30,639 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2024-05-27 15:25:31,558 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/speech "HTTP/1.1 200 OK"
+2024-05-27 15:26:02,503 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+2024-05-27 15:26:04,229 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2024-05-27 15:26:05,047 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/speech "HTTP/1.1 200 OK"
+2024-05-27 15:26:31,873 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+2024-05-27 15:26:33,098 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2024-05-27 15:26:33,855 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/speech "HTTP/1.1 200 OK"
+2024-05-27 15:26:44,746 - root - INFO - Check Profile State
+2024-05-27 15:26:53,955 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+2024-05-27 15:26:57,653 - root - INFO - User does not have a profile.
+2024-05-27 15:26:57,654 - root - INFO - User confirmed not having a profile.
+2024-05-27 15:26:57,811 - root - INFO - Profile State
+2024-05-27 15:27:14,984 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+2024-05-27 15:27:26,698 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/audio/transcriptions "HTTP/1.1 200 OK"
+2024-05-27 15:27:28,543 - root - INFO - User consent received.
+2024-05-27 15:28:20,473 - root - INFO - User name not obtained, exiting profiling.
+2024-05-27 15:28:24,673 - root - INFO - Profiling completed event set.
+2024-05-27 15:28:27,765 - root - INFO - Check Profile State

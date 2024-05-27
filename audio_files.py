@@ -53,5 +53,7 @@ audio_files = {
     "Sorry I couldn't make out your age, could you please say it again?.": "unclear_age_error.mp3",
     "Please listen to the following instructions.": "instruction_intro.mp3",
     "Thank you, for providing your information, your profile is now complete!": "profiling_completed_message.mp3",
-    "I will now peform some calibration to capture your facial features from a few angles for better accuracy.": "calibration_message.mp3"
+    "I will now peform some calibration to capture your facial features from a few angles for better accuracy.": "calibration_message.mp3",
+    "Sorry I could not make out your name, I am going to exit profiling.": "no_name.mp3",
+    "Sorry I could not make out your age, I am going to exit profiling.": "no_age.mp3"
 }
