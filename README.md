@@ -1,10 +1,28 @@
-# AI-Integrated Face Recognition and Tracking System
+# Integrated Facial Recognition and Voice-Enabled Chatbot
 
 ## Project Overview
 
-This project aims to develop an AI-integrated face recognition and tracking system using a Raspberry Pi. It is divided into two main parts: User Profiling and Face Detection, and Face Recognition.
+This project integrates facial recognition with a voice-enabled chatbot to create an interactive user experience. The system identifies users through facial recognition, collects demographic information, and engages in conversations using OpenAI's GPT models. It provides personalized responses and uses text-to-speech (TTS) for audio interactions.
 
-### User Profiling and Face Detection
+## Table of Contents
+
+1. [Project Setup](#project-setup)
+2. [System Architecture](#system-architecture)
+3. [Usage Instructions](#usage-instructions)
+4. [Key Features](#key-features)
+5. [Modules Overview](#modules-overview)
+6. [API Keys and Configuration](#api-keys-and-configuration)
+7. [Known Issues](#known-issues)
+8. [Future Enhancements](#future-enhancements)
+
+## Project Setup
+
+1. **Clone the Repository**
+   ```sh
+   git clone https://github.com/yourusername/facial-voice-chatbot.git
+   cd facial-voice-chatbot
+
+## System Architecture
 
 - Detect a user's face when it enters the frame.
 - Request user consent to record facial features and demographic data.
