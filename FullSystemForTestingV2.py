@@ -212,7 +212,7 @@ def live_speech_to_text(audio_input_queue, wait_time=70):
                 continue
             elif frames_recorded == 40:
                 print("Listening...")
-                speech_volume = speech_volume * 3  # Consider adjusting this based on testing
+                speech_volume = speech_volume * 3  
                 ambient_detected = True
 
         if rms > speech_volume and listening_enabled:
@@ -827,6 +827,7 @@ def main():
                     #developer_frame = frame.copy()
 
                     if results.detections:
+                        no_detection_counter = 0
                         if face_detected_time is None:
                             face_detected_time = time.time()  # Start the timer on the first detection
                                                 # Example of getting operational info
@@ -848,7 +849,7 @@ def main():
 
                         if time.time() - face_detected_time >= 3:  # Check if the face has been detected continuously for 3 seconds
                             if not face_detected_event.is_set():  # Check this only once
-                                display_info = display_info_default
+                                clear_queue(audio_input_queue)
                                 face_detected_event.set()
                                 print("Face detected for 3 seconds, initiating check profile state")
                                 check_profile_thread = threading.Thread(target=check_profile_state)
@@ -890,6 +891,7 @@ def main():
                                 conversation_thread = None
                                 conversation = conversation_initial_setup.copy()
                             clear_queue(audio_input_queue)
+                            display_info = display_info_default
                             face_detected_time = None  # Reset to detect new face
                             face_detected_event.clear()  # Allow new face detection
                             recognition_failure_event.clear()  # Reset after starting profiling
@@ -929,6 +931,7 @@ def main():
                                     Conversation contents:\n")
                             print_conversation(conversation)
                             clear_queue(audio_input_queue)
+                            display_info = display_info_default
                             face_detected_time = None  # Reset to detect new face
                             face_detected_event.clear()  # Allow new face detection
                             conversation_ended_event.clear()  # Reset profiling event
