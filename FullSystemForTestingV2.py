@@ -163,9 +163,10 @@ def play_audio(message_key, name=None, retries=3, delay=2):
     except KeyError as e:
         print(e)  # Log the error for diagnostics
         raise  # Re-raise to notify the calling function of the failure
-    finally:
+    #finally:
+        
         # Re-enable listening after audio playback or on error
-        listening_enabled = True
+        #listening_enabled = True
 
 def bandpass_filter(data, lowcut, highcut, fs, order=5):
     nyq = 0.5 * fs
