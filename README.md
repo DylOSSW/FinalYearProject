@@ -15,6 +15,10 @@ This project integrates facial recognition with a voice-enabled chatbot to creat
 7. [Known Issues](#known-issues)
 8. [Future Enhancements](#future-enhancements)
 
+## Video Demonstration
+
+Youtube Link: https://youtu.be/X12ZuIElGIY
+
 ## Project Setup
 
 1. **Clone the Repository**
